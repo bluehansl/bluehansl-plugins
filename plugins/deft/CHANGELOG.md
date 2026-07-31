@@ -4,6 +4,14 @@
 
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 를 따르며, 버전 체계는 [Semantic Versioning](https://semver.org/lang/ko/) 을 사용합니다 (`claude-X.Y.Z` / `codex-X.Y.Z` 접두).
 
+## [codex-1.24.0] - 2026-07-31
+
+> **Codex 포트 페르소나 레벨업** — Claude 측 `claude-2.49.0`의 multi-round 변경 중 Codex 포트에 해당하는 페르소나 합성 우선순위와 엔진 배정 휴리스틱을 현재 포트 구조에 맞게 이식. 통신·신호·보고 규약은 변경 없이 유지.
+
+### Added
+- multi-round `SKILL.md` — **엔진 상대 강점 참고표**(claude=구현·파일 수정·도구 활용, claudex/codex=코드 리뷰·아키텍처 비평·리팩토링 관점) 추가. 배정 휴리스틱일 뿐 강제하지 않으며 사용자 명시 구성이 항상 우선.
+- multi-round `agents/claude-participant.md`·`codex-participant.md` — 파일 정체성을 **브랜드 통신 어댑터 + 기본 톤**으로 명시. Lead 가 합성 주입한 도메인 전문성 페르소나가 우선하되 통신·신호·보고 규약은 항상 유지.
+
 ## [claude-2.49.1] - 2026-07-31
 
 ### Changed
