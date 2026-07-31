@@ -311,7 +311,7 @@ work-id를 **어떤 규칙으로 만들지**는 특정 값(예: 티켓번호)을
 | **팀 내부** (통신·연속성·오케스트레이션) | `work.md`, `<role>.md`, `team.md`, `orchestration.log`, `.spawn-*`, 통신 임시물·검증 스크립트 | `~/.claude/plugin-data/deft/agent-teams/<work-id>/` |
 | **대외 완성물** (사용자 보고·타팀 공유) | 릴리즈 노트, 핸드오프 문서, 배포 절차서, QA 컨텍스트, 분석/권고 보고서 | **work-id 가 티켓(`IT-\d+`)이면 `~/.ai/tickets/<work-id>/`** / 티켓이 아닌 프로젝트·OSS 작업이면 해당 프로젝트 repo (plugin-data 금지) |
 
-- `ticket.md` 는 종전대로 `~/.ai/tickets/<TICKET_ID>/ticket.md` (본업 가이드 §2-4 — 본 규칙과 일관).
+- `ticket.md` 는 종전대로 `~/.ai/tickets/<TICKET_ID>/ticket.md` (`ticket-analysis` 스킬 artifact-routing — 본 규칙과 일관).
 - **대외 완성물을 배출하면 work.md `## META`(또는 해당 섹션)에 그 경로 링크를 남긴다** — work.md 가 SSOT 로 "완성물이 어디 있는지"를 항상 가리키게(경로 수색 제거).
 - Why: plugin-data 는 plugin update 로부터 **도구 내부 상태**를 지키는 영역이다(§3-1). 사용자·타팀이 다시 열어볼 문서가 거기 섞이면 매번 두 경로를 뒤져야 한다 — 독자가 있는 완성물은 작업의 홈(티켓 디렉토리/repo)에 둔다.
 - **우선순위**: 사용자 환경의 상위 지침(전역/프로젝트 AGENTS.md·CLAUDE.md)이 별도 산출물 경로를 규정하면 **그것이 우선**한다 — 본 규칙은 그런 지침이 없을 때의 **기본값**이다.

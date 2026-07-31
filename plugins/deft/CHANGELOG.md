@@ -4,6 +4,11 @@
 
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 를 따르며, 버전 체계는 [Semantic Versioning](https://semver.org/lang/ko/) 을 사용합니다 (`claude-X.Y.Z` / `codex-X.Y.Z` 접두).
 
+## [claude-2.49.1] - 2026-07-31
+
+### Changed
+- agent-teams `SKILL.md` §3-4-1 — 산출물 경로 규칙의 외부 참조를 "본업 가이드 §2-4"에서 `ticket-analysis` 스킬 artifact-routing 으로 치환 (호스트 지침의 티켓 워크플로가 ticket-analysis 스킬로 이전됨에 따른 정합. 규칙 내용 무변경 — 참조 대상만 교체).
+
 ## [claude-2.49.0] - 2026-07-31
 
 > **페르소나 레벨업 (oh-my-claudecode 분석 반영)** — OMC 페르소나 시스템 분석에서 검증된 기법을 deft 철학(간결·단계 게이트·LLM Lead 취합)에 맞게 선별 이식. 통신·spawn·종료 로직 무변경 — 페르소나·SKILL 문서만 수정. 신호 양식(VERDICT/PASS·FAIL/DONE 등)과 기존 계약 조항(work.md write 금지 등)은 전부 불변 유지. JSON verdict 계약은 검토 후 **채택 안 함** (deft 취합자는 코드가 아니라 LLM Lead — 센티널+자유 텍스트가 최적, 실측 사고도 형식이 아닌 통신 계층에서만 발생).
