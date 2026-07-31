@@ -15,7 +15,7 @@ mkdir -p "$LOG_DIR"
 jq -c '{
   ts:   (now | strflocaltime("%Y-%m-%dT%H:%M:%S%z")),
   tool: (.tool_name // null),
-  env:  (.tool_name // "" | capture("mcp__(?<s>[^_]+)__")?.s // null),
+  env:  (.tool_name // "" | (capture("mcp__(?<s>[^_]+)__")? | .s) // null),
   sql:  (.tool_input.sql // null),
   error: (
     (.tool_response.isError // false)
