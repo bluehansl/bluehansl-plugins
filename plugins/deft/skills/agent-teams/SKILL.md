@@ -560,24 +560,24 @@ Lead가 work.md `## 협의사항`에 종합할 때 출처를 줄 단위로 `@{ro
 
 ### 7-1. 기본 구성 (3인 + 옵션)
 
-| 역할 | 담당 | 페르소나 |
-|---|---|---|
-| **Lead** | 팀장 + 기획 (사용자 직접 소통, work.md 단독 writer) | `agents/lead.md` |
-| `backendDev` | 백엔드 개발 | `agents/backendDev.md` |
-| `frontendDev` | 프론트엔드 개발 | `agents/frontendDev.md` |
-| `qa` | 테스트 시나리오·검증 | `agents/qa.md` |
+| 역할 | 담당 | 쓰지 않을 때 | 페르소나 |
+|---|---|---|---|
+| **Lead** | 팀장 + 기획 (사용자 직접 소통, work.md 단독 writer) | — (항상 존재) | `agents/lead.md` |
+| `backendDev` | 백엔드 개발 | 백엔드 변경이 없는 작업 (FE 전용·문서 전용) | `agents/backendDev.md` |
+| `frontendDev` | 프론트엔드 개발 | 화면 변경이 없는 작업 (BE 전용·SQL 전용) | `agents/frontendDev.md` |
+| `qa` | 테스트 시나리오·검증 | 검증할 산출물이 없는 단계 (분석·설계만) 또는 사용자가 "QA 없이" 명시 | `agents/qa.md` |
 
 - **기본 3인(BE/FE/QA) 자동 spawn**. 사용자가 "QA 없이" / "BE만" 명시 시 축소.
 - 모두 Claude — 동질 시각, 컨벤션 강제 일관. Lead가 기획 겸임(별도 기획 팀원 X).
 
 ### 7-2. 추가 역할 (선택)
 
-| 역할 | 추가 트리거 | 페르소나 |
-|---|---|---|
-| `designer` | 신규 화면·UI 변경·디자인 시스템 영향 | `agents/designer.md` |
-| `architect` | 영향도·설계가 복잡 | `agents/architect.md` |
-| `reviewer` | PR 사인오프(이중 리뷰) | `agents/reviewer.md` |
-| `pm-{관점}` | 의사결정 양면 토론 (`pm-user`/`pm-eng`/`pm-ops`) | `agents/pm.md` |
+| 역할 | 추가 트리거 | 쓰지 않을 때 | 페르소나 |
+|---|---|---|---|
+| `designer` | 신규 화면·UI 변경·디자인 시스템 영향 | 기존 화면 컨벤션 답습으로 충분한 단순 변경 | `agents/designer.md` |
+| `architect` | 영향도·설계가 복잡 | 단일 모듈·영향도가 자명한 변경 (Lead 영향도 분석으로 충분) | `agents/architect.md` |
+| `reviewer` | PR 사인오프(이중 리뷰) | signoff 요구가 없는 일반 작업 (Lead 의 diff 검증으로 충분) | `agents/reviewer.md` |
+| `pm-{관점}` | 의사결정 양면 토론 (`pm-user`/`pm-eng`/`pm-ops`) | 방향이 이미 확정됐거나 트레이드오프가 단면적인 결정 | `agents/pm.md` |
 
 ### 7-3. 네이밍 & 페르소나 적용
 

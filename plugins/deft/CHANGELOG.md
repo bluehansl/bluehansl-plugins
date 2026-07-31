@@ -4,6 +4,18 @@
 
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 를 따르며, 버전 체계는 [Semantic Versioning](https://semver.org/lang/ko/) 을 사용합니다 (`claude-X.Y.Z` / `codex-X.Y.Z` 접두).
 
+## [claude-2.49.0] - 2026-07-31
+
+> **페르소나 레벨업 (oh-my-claudecode 분석 반영)** — OMC 페르소나 시스템 분석에서 검증된 기법을 deft 철학(간결·단계 게이트·LLM Lead 취합)에 맞게 선별 이식. 통신·spawn·종료 로직 무변경 — 페르소나·SKILL 문서만 수정. 신호 양식(VERDICT/PASS·FAIL/DONE 등)과 기존 계약 조항(work.md write 금지 등)은 전부 불변 유지. JSON verdict 계약은 검토 후 **채택 안 함** (deft 취합자는 코드가 아니라 LLM Lead — 센티널+자유 텍스트가 최적, 실측 사고도 형식이 아닌 통신 계층에서만 발생).
+
+### Added
+- agent-teams `agents/*.md` 8종 — `## 비책임 (하지 않는 일)` 섹션 전원 추가 (역할 경계 중복 방지 — OMC role disambiguation 사상).
+- agent-teams `agents/backendDev.md`·`frontendDev.md`·`qa.md`·`reviewer.md` — `## 완료 기준`(BE/FE)·`## 실패 패턴 (금지)` 추가 (최소 diff·검증 없는 DONE 금지·러버스탬프/범위 확장 등 안티패턴 명시).
+- agent-teams `agents/qa.md`·`reviewer.md` — `## 조사 프로토콜 (경량)` 추가: 사전 예측(pre-commitment) → 주장 검증 → 갭 분석("빠진 것" 탐색) → 다관점 1패스(reviewer). OMC critic Investigation Protocol 의 경량판.
+- agent-teams `SKILL.md` §7-1·§7-2 역할표 — **"쓰지 않을 때"(avoidWhen) 열** 추가 (Lead 의 과잉 spawn 억제).
+- multi-round `SKILL.md` §1-4 — **엔진 상대 강점 참고표**(claude=구현·도구, claudex/codex=리뷰·아키텍처 비평) 추가. 배정 휴리스틱일 뿐 강제 아님 — 사용자 명시 mix 항상 우선.
+- multi-round `agents/claude-participant.md`·`codex-participant.md` — 파일 정체성 명시: **브랜드 통신 어댑터 + 기본 톤** (도메인 전문성 페르소나는 Lead spawn 합성이 우선, 통신·신호 규약은 항상 유지).
+
 ## [claude-2.48.4] - 2026-07-24
 
 > **2.48.3 스모크에서 발견 — 팀원 pane `orca terminal close` 금지** — tmux shim 경로 스모크 중 실측: 팀원 pane(부활 잔재)을 `orca terminal close` 로 닫자 shim 의 team.panes 레지스트리에 stale 등록이 남아 **이후 `Agent` spawn 이 `tmux: terminal_exited` 로 실패**(stale pane 을 anchor 로 split 시도). 복구는 `tmux kill-pane -t <stale id>`(레지스트리 동기 제거 — 실측 검증) 후 재spawn. 2.48.3 이 넣은 "팀원 pane 폴백: orca terminal close" 문구는 위험해 정정 — **팀원 pane 정리는 tmux kill-pane(shim)만, orca terminal close 는 orca terminal 직접 생성 pane(claudex 워커) 전용**. 스모크로 shim `capture-pane`/`list-panes`/`kill-pane`/`split-window`(spawn 경유) 실동도 확정.
