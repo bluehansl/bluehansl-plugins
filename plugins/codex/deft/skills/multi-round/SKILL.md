@@ -70,7 +70,7 @@ description: '여러 AI(Codex/Claudex/Claude)가 N라운드 양방향 토론으�
 | 채널 | 매체 | 싣는 것 |
 |---|---|---|
 | **데이터** | 버스 보드 (`board.jsonl`, MCP 도구 / bin CLI 로 접근) | 본문 전부 — 줄바꿈·마크다운·길이 제한 없음 |
-| **제어** | `cmux send` 노크 | `[bus] 메시지 확인` 한 줄만 |
+| **제어** | `cmux send` 노크 | 노크 한 줄만 — 워커용은 `[bus] 메시지 확인 — check_messages 도구 호출 (…exec 힌트)` 장문, Lead 용은 `[bus] 메시지 확인` 단문. 판정 매칭은 **prefix `[bus] 메시지 확인` 기준** (완전일치 금지) |
 
 → `cmux send` 의 줄바꿈 조기 제출·sanitize·capture 노이즈 문제가 **구조적으로 사라진다**. pane 은 시각화·사용자 직접 개입 전용, 통신은 보드 전용.
 
@@ -352,7 +352,7 @@ Phase 0 결과 + 참가자 구성으로 §통신 우선순위 매트릭스에서
 #### 3-A. 메시지 버스 경로 (pane 환경 && `HAVE_BUS=1` — 기본)
 
 > 🟠 **orca 모드 (§환경 판정)**: 이하 (1)~(5)의 bare cmux 호출은 전부 금지(오발사). orca 등가 절차 —
-> - **(1) Lead 등록**: `cmux identify` 대신 **`--surface "$ORCA_TERMINAL_HANDLE"`** (버스가 `term_*` 핸들을 `orca terminal send` 노크로 처리 — Lead 깨우기 동일 성립).
+> - **(1) Lead 등록**: `cmux identify` 대신 **`--kind lead --surface "$ORCA_TERMINAL_HANDLE"`** (버스가 `term_*` 핸들을 `orca terminal send` 노크로 처리 — Lead 깨우기 동일 성립. ⚠️ `--kind lead` 누락 시 kind 기본값 worker 로 등록되어 Lead 가 워커용 장문 노크를 받는다 — 버스가 이름 `lead` 예약어로 방어하지만 명시가 원칙).
 > - **(2)+(3.5)+(4) 를 워커별 원샷 하나로 대체**: 빈 pane 선분할·readiness 마커·CLI 부팅 send 가 전부 불요 — (4)에서 조립한 `WORKER_CMD` 를 그대로 `--command` 로:
 >   ```bash
 >   # 첫 워커: Lead 우측(vertical=좌우 분할), 이후: 직전 워커 아래(horizontal=상하 분할) — "Lead | 워커 상하 스택" 재현
@@ -445,7 +445,16 @@ WORKER_NAME="worker1"   # 참가자 이름 (페르소나 역할 반영 권장 �
 #   claudex/codex 는 MCP 도구 영구 신뢰 설정이 없어 (config 후보 키 전수 무효 — 실측) 호출마다 승인 다이얼로그가 뜸.
 #   bypass 가 유일한 0회 승인 경로 (인스턴스 한정 — 사용자 config 무변경). 트레이드오프: 해당 워커의 명령 실행 승인·sandbox 도 해제되므로
 #   회의 워커(발언 전용) 용도에 한정할 것. 승인 최소화로 충분하면 bypass 를 빼고 첫 호출 시 "Allow for this session" 을 도구당 1회 선택 (회의당 2회).
-WORKER_CMD="$ENGINE -m gpt-5.5 --disable tool_call_mcp_elicitation --dangerously-bypass-approvals-and-sandbox $DISABLE_ARGS -c 'mcp_servers.bus={command=\"$BUS_BIN\",args=[\"mcp\"],env={MULTI_ROUND_SESSION_DIR=\"$SESSION_DIR\",BUS_PARTICIPANT=\"$WORKER_NAME\"}}'"
+# -m 모델 명시 필수 (생략 금지): 미지정이면 사용자 ~/.codex/config.toml 기본 모델로 부팅되는데,
+#   그게 gpt-5.6 계열(tool_mode=code_mode_only — models_cache.json)이면 버스 MCP 도구가 top-level 에
+#   노출되지 않아 워커가 check/post 를 못 하고 텍스트 ACK 만 출력하는 장애가 난다(실측 — gpt-5.6-sol).
+#   direct tool 모델(deft-model codex 기본 gpt-5.5)로 고정. code_mode_only 모델을 쓰려면 DEFT_CODEX_MODEL
+#   로 명시하되, 그 경우 워커는 exec 안에서 tools.mcp__bus__* nested 호출을 쓴다(페르소나 §도구 호출 표면).
+WORKER_MODEL="$(deft-model codex 2>/dev/null || echo "${DEFT_CODEX_MODEL:-gpt-5.5}")"
+# fail-fast 가드: WORKER_CMD 는 pane 셸에 타이핑되는 문자열 — 공백·따옴표·메타문자가 섞인 값은
+# word-splitting/인젝션으로 이어진다. 모델 ID 문자셋만 허용하고 아니면 즉시 중단.
+case "$WORKER_MODEL" in (*[!A-Za-z0-9._:-]*|"") echo "ERROR: 워커 모델 값 비정상('$WORKER_MODEL')"; exit 1;; esac
+WORKER_CMD="$ENGINE -m '$WORKER_MODEL' --disable tool_call_mcp_elicitation --dangerously-bypass-approvals-and-sandbox $DISABLE_ARGS -c 'mcp_servers.bus={command=\"$BUS_BIN\",args=[\"mcp\"],env={MULTI_ROUND_SESSION_DIR=\"$SESSION_DIR\",BUS_PARTICIPANT=\"$WORKER_NAME\"}}'"
 cmux send --surface "$W1_SURFACE" "$WORKER_CMD"
 cmux send-key --surface "$W1_SURFACE" Enter
 ```
@@ -476,7 +485,7 @@ cmux send-key --surface "$W1_SURFACE" Enter
 
 sleep 3  # TUI readiness
 # 페르소나 prompt — 짧게 유지 (상세는 버스 보드의 첫 메시지로 전달하므로)
-PERSONA_BOOT="당신은 multi-round 회의 참가자 '$WORKER_NAME' 입니다. 버스 MCP 도구(check_messages/post_message)가 연결되어 있습니다. 지금 check_messages 를 호출해 첫 안내를 읽고 지침을 따르세요. 이후 '[bus] 메시지 확인' 입력을 받으면 항상 check_messages 부터 호출하세요."
+PERSONA_BOOT="당신은 multi-round 회의 참가자 '$WORKER_NAME' 입니다. 버스 MCP 도구(check_messages/post_message)가 연결되어 있습니다. 지금 check_messages 를 호출해 첫 안내를 읽고 지침을 따르세요. 이후 '[bus] 메시지 확인' 입력을 받으면 항상 check_messages 부터 호출하세요. 도구가 top-level 에 안 보이면(code_mode_only 모델) exec 안에서 await tools.mcp__bus__check_messages({}) 로 호출하세요 — 도구 호출 없이 텍스트로만 '확인했습니다' 응답 금지."
 cmux send --surface "$W1_SURFACE" "$PERSONA_BOOT"
 cmux send-key --surface "$W1_SURFACE" Enter
 ```
@@ -503,7 +512,7 @@ EOF
 
 버스 불가 시 구형 경로 — pane TUI 에 직접 prompt 주입 + 화면 캡처로 응답 수집.
 
-- TUI 기동: `claudex -m gpt-5.5 -c mcp_servers={}` (claudex 없으면 codex, 그것도 없으면 `claude --model "$(deft-model claude 2>/dev/null||echo claude-fable-5)"`)
+- TUI 기동: `claudex -m "$(deft-model codex 2>/dev/null||echo gpt-5.5)" -c mcp_servers={}` (claudex 없으면 codex, 그것도 없으면 `claude --model "$(deft-model claude 2>/dev/null||echo claude-fable-5)"`)
 - prompt 주입 시 **줄바꿈 sanitize 필수**: `PROMPT_SAFE=$(tr '\n' ' ' < file)` 후 `cmux send` + `cmux send-key Enter` (`\n` 은 Enter 로 해석되어 조기 제출됨)
 - 긴 prompt 는 `$SESSION_DIR/round<N>-<worker>.md` 저장 후 "Read <경로>" 한 줄만 send
 - 응답 감지 2단: ① `capture-pane --scrollback` 에서 `DONE:` 센티넬 grep ② idle-stable 폴링 (20줄 캡처 동일 반복 시 완료 간주, 8초 간격 최대 30회)
@@ -516,6 +525,7 @@ pane 시각화 불가 환경의 지속 대화 경로 (claudex 가 codex 에 MCP 
 ```
 claudex.codex(prompt: "<페르소나 + 라운드1>", model: "gpt-5.5", developer-instructions: "<agents/codex-participant.md 본문>")
 → conversationId 저장 (sessions/<tag>/state.sh). 이후 라운드는 claudex.codex-reply(conversationId, prompt) — stateful 지속 대화 (1-shot 재전송 아님)
+# model 은 deft-model codex 값(direct tool 모델 — 기본 gpt-5.5)을 쓴다. gpt-5.6 계열(code_mode_only) 지정 시 §4-B tool_mode 이원화 참조.
 ```
 
 claudex MCP 미등록·미설치면 multi-check 안내 후 중단. (등록은 사용자 수동 — `~/.codex/config.toml` 에 `[mcp_servers.claudex]` / `command = "claudex"` / `args = ["mcp-server", "-c", "mcp_servers={}"]` 스니펫 안내만 출력, 자동 write 금지.)
@@ -562,11 +572,12 @@ Lead 의 라운드 동작:
 
 #### 4-B. 워커 측 프로토콜 (페르소나에 명시 — agents/*.md)
 
-1. `[bus] 메시지 확인` 입력 수신 → 즉시 `check_messages`
+1. `[bus] 메시지 확인` 노크 수신 → 즉시 `check_messages` **도구 호출** (텍스트 "확인했습니다" 출력은 확인이 아님)
 2. 새 메시지 각각에 대해:
    - **수신자 = 본인 (또는 all)** → 작업 수행 → `post_message`(to=요청자, type=response) 로 응답. 마지막 줄 `DONE:` 센티넬
    - **수신자 ≠ 본인** → 컨텍스트로만 검토 (작업 X). 논의에 기여할 내용이 있을 때만 수신자를 지정해 자발 발언 (`type=comment`)
 3. 자발 발언은 라운드당 최대 1회 권장 (노이즈 방지)
+4. 🔧 **codex 모델 tool_mode 이원화**: direct tool 모델(gpt-5.5 계열, `tool_mode: null`)은 버스 도구를 top-level 로 직접 호출하지만, **code_mode_only 모델(gpt-5.6-sol/terra/luna — `~/.codex/models_cache.json`)은 top-level 에 버스 도구가 없어 `exec` 안에서 `tools.mcp__bus__check_messages({})` / `tools.mcp__bus__post_message({...})` nested 호출**로만 가능하다(실측: 미지시 시 도구 호출 없이 텍스트 ACK 만 출력하는 장애). 노크 문구·버스 도구 설명·페르소나(§도구 호출 표면)가 이 지침을 삼중으로 싣고, spawn 은 `-m`(deft-model codex 기본 gpt-5.5)으로 모델을 고정해 원천 회피한다. code_mode_only 모델을 명시 사용할 땐 첫 라운드에서 board 에 응답이 실리는지 확인.
 
 #### 4-C. 라운드 진행 — 자동 진행 (사용자 질문 X)
 
@@ -657,6 +668,7 @@ Lead 의 라운드 동작:
 | orca 모드에서 rebalance 계열/deft-cmux-shim 이 "orca 모드" no-op/차단 출력 | 정상 가드 동작 — cmux 경로 재시도 금지, 해당 Phase 🟠 orca 분기로 진행 |
 | 노크 실패 (cmux send 에러) | 버스가 결과에 `failed` 로 보고 — 메시지는 보드에 안전하게 남아 다음 check 때 수신. Lead 는 timeout 시 수동 check |
 | 라운드 timeout (기본 300s, 노크 안 옴) | Lead 수동 `check` 1회 + 해당 워커 pane 상태 확인 → 그래도 무응답이면 skip 하고 남은 워커로 종합 |
+| codex 워커가 노크마다 "ACK: 확인했습니다" 텍스트만 출력하고 board 에 안 실림 | code_mode_only 모델(gpt-5.6 계열) 함정 — 버스 도구가 top-level 미노출 (§4-B tool_mode 이원화). 워커 pane 에 exec 호출 지시 1줄 주입(`exec 로 await tools.mcp__bus__check_messages({}) 를 호출해 미독 메시지를 처리하라`) → 그래도 무응답이면 해당 워커를 direct tool 모델(gpt-5.5)로 재spawn |
 | 워커가 spawn 직후 사망 (바이너리 경로 오류 등) | 죽은 pane 정리(프로세스 0 확인 후 close-surface) → 재spawn → rebalancing 재호출 |
 | 한 워커 BLOCKED | 사용자에게 즉시 보고 + 결정 위임 |
 | max-round 도달 | Phase 5 종합 — 미합의 항목 명시 + Lead 권장안 1개 |
@@ -678,6 +690,7 @@ Lead 의 라운드 동작:
 ```
 - 응답 언어: 한국어
 - 통신: 버스 MCP 도구만 사용. '[bus] 메시지 확인' 입력 수신 시 즉시 check_messages → 수신자 본인이면 작업 후 post_message 응답 / 아니면 검토만 (자발 발언은 기여할 내용 있을 때 1회)
+- **도구 호출 표면**: check_messages/post_message 가 top-level 도구로 보이면 직접 호출. **top-level 에 없으면(code_mode_only 모델 — gpt-5.6 계열) 반드시 exec 안에서 `await tools.mcp__bus__check_messages({})` / `await tools.mcp__bus__post_message({to,type,reply_to,content})` 로 호출**. 🚨 도구 호출 없이 "ACK: 확인했습니다" 텍스트만 출력하고 턴 종료 금지 — 확인도 응답도 아니다.
 - **발언 time-box (속도 — 실측 검증)**: 핵심 권장 + 근거 1~3줄로 **간결히**. 회의는 의견·설계 토론이므로 **과도한 web search(수십 회)·장문 분석 금지** — 아는 지식으로 신속히 응답해 라운드 지연을 막는다. (심층 사실확인이 핵심이면 multi-check/deep-research 가 적합)
 - 응답 마지막 줄에 'DONE:' 센티넬 (버스 메시지 본문 안에)
 - 회의 모드: {consult|dialogue|collaborate|debate}

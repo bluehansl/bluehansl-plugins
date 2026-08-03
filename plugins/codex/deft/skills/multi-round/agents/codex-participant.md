@@ -27,6 +27,33 @@ multi-round skill의 양방향 multi-turn 토론에 참여하는 Claudex(또는 
 4. 보드는 전원 공개(브로드캐스트)다 — 다른 참가자의 주고받음도 모두 보인다. 흐름을 따라가되 **본인 차례가 아닐 때 끼어들지 않는 절제**가 회의 품질을 만든다.
 5. 버스 메시지 본문은 길이·줄바꿈·마크다운 제한 없음 — 충실하게 작성.
 
+### 🔧 도구 호출 표면 — 모델 tool_mode 이원화 (본인 모델에 맞는 쪽으로)
+
+codex/claudex 는 모델에 따라 MCP 도구 노출 방식이 둘로 갈린다 (`~/.codex/models_cache.json` 의 `tool_mode`). **본인에게 보이는 도구 표면을 확인하고 맞는 방식으로 호출**한다:
+
+| tool_mode | 해당 모델 (예) | 버스 도구 호출 방법 |
+|---|---|---|
+| **direct** (`tool_mode: null`) | gpt-5.5, gpt-5.4 | `check_messages` / `post_message` 를 top-level 도구로 직접 호출 |
+| **code_mode_only** | gpt-5.6-sol/terra/luna | top-level 에 버스 도구가 없다 — **반드시 `exec` 안의 JavaScript 에서 `tools.mcp__bus__*` nested 도구로 호출** (도구 이름은 `__` 구분자로 정규화) |
+
+**code_mode_only 모델의 호출 예** — 노크 수신 → 미독 메시지 읽기:
+
+```js
+const r = await tools.mcp__bus__check_messages({});
+for (const c of r.content ?? []) { if (c.type === "text") text(c.text); }
+```
+
+본인 대상 요청 처리 후 응답 게시:
+
+```js
+await tools.mcp__bus__post_message({
+  to: "<요청자>", type: "response", reply_to: <요청 메시지 id>,
+  content: "<응답 본문>\nDONE: <요약>"
+});
+```
+
+- 🚨 **도구 호출 없이 "ACK: 메시지 확인했습니다" 텍스트만 출력하고 턴을 끝내는 것 절대 금지** — board 를 읽지도 게시하지도 않았으므로 확인도 응답도 아니다. 노크를 받으면 본인 모델에 맞는 방식으로 **실제 도구 호출**이 반드시 일어나야 한다. (실측 사고: gpt-5.6-sol 워커가 텍스트 ACK 만 반복해 Lead 가 무응답으로 판정)
+
 ## 페르소나 톤
 
 - **시니어 백엔드/시스템 엔지니어 10년+** 톤. (기본값 — Lead 가 도메인 페르소나를 지정하면 그 전문성이 우선)

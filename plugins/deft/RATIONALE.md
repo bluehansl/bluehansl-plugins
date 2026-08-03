@@ -124,6 +124,13 @@
 ### R-13. 발언 time-box (속도)
 - 회의는 의견·설계 토론이라 핵심 권장+근거 1~3줄로 간결히. 과도한 web search(수십 회)·장문 분석 금지(claudex/codex 워커가 web search 로 수 분 늘어지면 라운드 정체). 심층 사실확인은 multi-check/deep-research 가 적합.
 
+### R-17. codex 모델 tool_mode 이원화 — code_mode_only 는 MCP 도구가 top-level 에 없다 (실측 사고 2026-08-03)
+- **사고**: claudex 회의 워커(gpt-5.6-sol xhigh)가 `[bus] 메시지 확인` 노크를 여러 번 받고도 실제 MCP 도구 호출 없이 "ACK: 메시지 확인했습니다" 텍스트만 출력하고 턴 종료 — board 를 읽지도 post 하지도 않아 Lead 관점에선 무응답. 같은 세션을 gpt-5.5 로 바꾸자 정상 동작(check_messages → reply_to 응답 게시).
+- **원인 (소스+캐시 확정)**: `~/.codex/models_cache.json` 의 `tool_mode` 가 모델별로 다르다 — gpt-5.5/5.4 는 `null`(direct: MCP 도구 top-level 직접 호출), **gpt-5.6-sol/terra/luna 는 `code_mode_only`**(top-level 도구는 사실상 `exec` 뿐, MCP 도구는 exec 내부 JS 의 `tools.<정규화 이름>` nested 로만 노출 — `mcp__bus.check_messages` → `tools.mcp__bus__check_messages`). direct 전제로 쓰인 "check_messages 를 호출하라" 프롬프트를 code_mode_only 모델은 자연어 작업처럼 처리해 텍스트 ACK 만 낸다. 도구가 죽은 게 아니라 **모델이 올바른 호출 표면을 못 고른 것** — exec 내부 호출을 강하게 지시하면 gpt-5.6-sol 도 실제 호출 가능(실측).
+- **증폭 요인(부트스트랩 공백)**: 회의 프로토콜 상세는 board 첫 메시지(페르소나)로 전달되므로, 첫 check 를 못 하는 워커는 지침 자체를 영영 못 읽는다. 상시 지침은 노크 문구·버스 도구 설명뿐.
+- **대응 (삼중 안전)**: ① **spawn 모델 고정** — `deft-claudex-native-spawn` 이 `-m`(deft-model codex 기본 gpt-5.5, `DEFT_CODEX_MODEL` 오버라이드)을 자동 주입해 사용자 config 기본 모델(5.6 계열) 위임을 차단 ② **노크 문구·버스 도구 설명에 exec 호출 표면 명시**(`tools.mcp__bus__check_messages({})`) — 부트스트랩 공백을 상시 지침이 메움 ③ **페르소나(§도구 호출 표면)에 tool_mode 이원화 표+호출 예제** 명시.
+- **NTP 는 안전 (소스 확정)**: `send_message` 는 codex 네이티브 도구로 `multi_agent_v2.non_code_mode_only` 기본 `true` → `ToolExposure::DirectModelOnly` → code_mode_only 모델에서도 top-level 유지 (claudex `core/src/tools/spec_plan.rs`). 작업 모드(순수 NTP mesh)·첫 워커 SendMessage 중계는 영향 없음. agent-teams(전원 claude)·multi-check(`deft-review` 가 `-m gpt-5.5` 고정 + headless exec — MCP 불요)도 무관.
+
 ---
 
 ## 출력 / UX (전 스킬 공통)

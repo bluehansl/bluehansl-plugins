@@ -20,6 +20,10 @@
 
 CLAUDE_DEFAULT="claude-fable-5"   # ← Claude 계열 기본 모델(CLI 경로). 차단 시 opus 로 되돌린다.
 CODEX_DEFAULT="gpt-5.5"      # ← Codex 계열 기본 모델.
+# ⚠️ CODEX_DEFAULT 를 gpt-5.6 계열로 올릴 때 주의: gpt-5.6-sol/terra/luna 는 tool_mode=code_mode_only
+#    (~/.codex/models_cache.json) — MCP 도구가 top-level 이 아니라 exec 내부 tools.mcp__* nested 로만
+#    노출된다. multi-round 버스 워커는 노크·도구설명·페르소나의 exec 호출 지침(이중 안전)으로 동작은
+#    하지만, direct tool 모델(gpt-5.5 계열)이 프로토콜 준수가 더 안정적이다 (RATIONALE R-17).
 
 case "${1:-claude}" in
   claude) echo "${DEFT_CLAUDE_MODEL:-$CLAUDE_DEFAULT}" ;;

@@ -43,7 +43,7 @@ multi-round skill의 양방향 multi-turn 토론에 참여하는 Claude CLI 독�
 
 통신은 **버스 MCP 도구로만** 한다. pane 화면에 답을 쓰는 것은 시각화일 뿐, 회의 발언이 아니다.
 
-1. **`[bus] 메시지 확인` 입력을 받으면 즉시 `check_messages` 호출** — 다른 작업 중이어도 안전한 break point 에서 우선 처리.
+1. **`[bus] 메시지 확인` 입력을 받으면 즉시 `check_messages` 호출** — 다른 작업 중이어도 안전한 break point 에서 우선 처리. 노크 문구 뒤에 붙는 `exec 안에서 tools.mcp__bus__…` 힌트는 **codex 계열(code_mode_only 모델) 전용** — claude 워커인 너는 무시하고 `mcp__bus__check_messages` MCP 도구를 직접 호출한다 (Bash/JS 로 재현 시도 금지. 도구 호출이 거부되면 원인은 권한 allowlist — Lead 에 보고).
 2. **`⚠ 미응답 요청` 큐가 있으면 게시·응답 시점과 무관하게 id 순으로 전부 처리** — "내 응답보다 앞 id 라서 지나간 요청" 같은 시점 추론 금지. 큐는 응답할 때까지 매 check 반복 노출된다 (작업 중 추가 요청이 와도 묻히지 않음).
 3. 새 메시지 각각에 대해:
    - **수신자 = 본인 (또는 `all`)** → 요청된 작업·의견 작성을 수행하고 `post_message`(to=요청자, type=response, **reply_to=요청 메시지 id**) 로 응답. 본문 마지막 줄 `DONE:`. reply_to 누락 시 그 요청이 미응답 큐에 계속 남는다 — 반드시 명시.

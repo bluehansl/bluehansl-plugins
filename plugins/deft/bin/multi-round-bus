@@ -12,7 +12,8 @@
  *   - participants.json : 참가자 레지스트리 {name: {surface, kind}}
  *   - cursors.json      : 참가자별 마지막 읽은 메시지 id
  *   - knocks.json       : 참가자별 마지막 노크 시점 id (디바운스)
- *   - post 시 발신자 제외 전원에게 cmux send "[bus] 메시지 확인" 노크 (제어 채널 — 한 줄만)
+ *   - post 시 발신자 제외 전원에게 노크 한 줄 (제어 채널 — 워커용은 "[bus] 메시지 확인 — …" 호출
+ *     표면 힌트 포함 장문, Lead 는 단문. 판정 매칭은 prefix "[bus] 메시지 확인" 기준)
  *   - 디바운스: knocks[p] > cursors[p] 이면 미확인 노크 존재 → 추가 노크 skip
  *
  * 세션 디렉토리: --session <dir> 인자 또는 env MULTI_ROUND_SESSION_DIR
@@ -23,7 +24,15 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const KNOCK_TEXT = '[bus] 메시지 확인';
+// 노크 문구 — "[bus] 메시지 확인" prefix 는 페르소나·Lead 판정 매칭 키라 유지.
+// 뒤의 호출 표면 힌트는 code_mode_only 모델(gpt-5.6 계열) 대응: 이 모델들은 MCP 도구가
+// top-level 에 없고 exec 내부 tools.mcp__bus__* nested 로만 노출된다. 프로토콜 상세는
+// board 첫 메시지(페르소나)로 전달되므로, 첫 check 를 못 하면 지침도 못 읽는 부트스트랩
+// 공백을 노크 문구 자체가 메운다 (실측 사고: gpt-5.6-sol 워커가 도구 호출 없이 텍스트
+// "ACK: 메시지 확인했습니다"만 출력하고 턴 종료 — Claude 측 plugins/deft/RATIONALE.md R-17).
+const KNOCK_TEXT = '[bus] 메시지 확인 — check_messages 도구 호출 (도구가 top-level 에 없으면 exec 안에서 await tools.mcp__bus__check_messages({}))';
+// Lead(Claude Code)는 MCP 가 아니라 bin CLI(`multi-round-bus check`)로 읽으므로 도구 힌트 없이 기존 문구 유지.
+const KNOCK_TEXT_LEAD = '[bus] 메시지 확인';
 const LOCK_STALE_MS = 5000;
 const KNOCK_RETRY_MS = 60000; // 미확인 노크가 이 시간 경과하면 다음 post 때 재노크 (aged-knock)
 
@@ -120,7 +129,7 @@ function readBoard(dir) {
 
 // ---------- 노크 (제어 채널) ----------
 
-function cmuxKnock(surface) {
+function cmuxKnock(surface, text = KNOCK_TEXT) {
   // 🚨 orca 오발사 가드 — Orca 터미널 안에서도 cmux CLI 가 소켓으로 별도 cmux 앱에 연결돼
   //   send 가 엉뚱한 앱의 pane 입력창에 주입된다(실측). orca 모드는 cmux 노크를 절대 시도하지 않고,
   //   surface 가 orca 터미널 핸들(term_*)로 등록됐으면 orca terminal send 로 노크한다(등가 경로).
@@ -128,7 +137,7 @@ function cmuxKnock(surface) {
   if (process.env.ORCA_WORKTREE_ID || process.env.ORCA_TERMINAL_HANDLE) {
     if (surface && String(surface).startsWith('term_')) {
       try {
-        execFileSync('orca', ['terminal', 'send', '--terminal', surface, '--text', KNOCK_TEXT, '--enter', '--json'],
+        execFileSync('orca', ['terminal', 'send', '--terminal', surface, '--text', text, '--enter', '--json'],
           { stdio: 'ignore', timeout: 10000 });
         return true;
       } catch (_) { return false; }
@@ -136,7 +145,7 @@ function cmuxKnock(surface) {
     return false;
   }
   try {
-    execFileSync('cmux', ['send', '--surface', surface, KNOCK_TEXT], { stdio: 'ignore', timeout: 5000 });
+    execFileSync('cmux', ['send', '--surface', surface, text], { stdio: 'ignore', timeout: 5000 });
     execFileSync('cmux', ['send-key', '--surface', surface, 'Enter'], { stdio: 'ignore', timeout: 5000 });
     return true;
   } catch (_) {
@@ -147,11 +156,11 @@ function cmuxKnock(surface) {
 // NTP inbox push — 회의 모드 워커(팀 멤버)의 깨우기. cmux send 노크 대신 팀 inbox 파일에
 // envelope 를 atomic append → 워커 watcher 가 자기 턴 경계에 자동 주입(노크 효과). cmux send
 // 의 focus/타이밍/lazy-init/유출 취약성을 제거(이슈1). board(데이터)는 무관 — 깨우기만 교체.
-function ntpPush(inboxPath, fromName) {
+function ntpPush(inboxPath, fromName, text = KNOCK_TEXT) {
   try {
     let arr = [];
     try { const j = JSON.parse(fs.readFileSync(inboxPath, 'utf8')); if (Array.isArray(j)) arr = j; } catch (_) { arr = []; }
-    arr.push({ from: fromName || 'lead', text: KNOCK_TEXT, summary: KNOCK_TEXT, timestamp: new Date().toISOString(), type: 'message', read: false });
+    arr.push({ from: fromName || 'lead', text, summary: text, timestamp: new Date().toISOString(), type: 'message', read: false });
     const tmp = `${inboxPath}.deft-tmp-${process.pid}`;
     fs.writeFileSync(tmp, JSON.stringify(arr));
     fs.renameSync(tmp, inboxPath);
@@ -189,7 +198,10 @@ function knockOthers(dir, sender, msgId) {
       continue;
     }
     // 회의 모드 팀원(inbox 등록)은 NTP inbox push, 그 외(surface 만)는 cmux 노크 — 하위호환
-    const woke = info.inbox ? ntpPush(info.inbox, sender) : cmuxKnock(info.surface);
+    // Lead 는 CLI check 경로라 도구 힌트 없는 짧은 문구, 워커는 code_mode_only 대응 힌트 포함 문구.
+    // 이름 'lead' 는 프로토콜 예약어 — --kind 생략 등록(kind='worker' 기본값) 방어 폴백.
+    const text = (info.kind === 'lead' || name === 'lead') ? KNOCK_TEXT_LEAD : KNOCK_TEXT;
+    const woke = info.inbox ? ntpPush(info.inbox, sender, text) : cmuxKnock(info.surface, text);
     if (woke) {
       knocks[name] = { id: msgId, ts: now };
       result.knocked.push(name);
@@ -333,7 +345,12 @@ function doWatch(dir, opts) {
   const participants = readJson(F.participants, {});
   const cursors = readJson(F.cursors, {});
   const info = participants[to] || {};
-  const reknocked = info.surface ? cmuxKnock(info.surface) : false;
+  // knockOthers 와 동일 정책 — inbox 우선(ntpPush) + kind/이름 분기. inbox-only 참가자(orca 등)도
+  // 재노크 가능해야 STALLED 회복이 성립한다 (surface 전용이면 재노크가 아예 시도되지 않음).
+  const reknockText = (info.kind === 'lead' || to === 'lead') ? KNOCK_TEXT_LEAD : KNOCK_TEXT;
+  const reknocked = info.inbox
+    ? ntpPush(info.inbox, 'lead', reknockText)
+    : (info.surface ? cmuxKnock(info.surface, reknockText) : false);
   console.log(
     `STALLED: ${to} 가 #${afterId} 이후 ${Math.round(timeoutMs / 1000)}s 무응답 ` +
     `(읽음 커서: ${cursors[to] !== undefined ? '#' + cursors[to] : '없음 — check 자체가 안 됨'}` +
@@ -513,7 +530,8 @@ const MCP_TOOLS = [
     description:
       '메시지 버스 보드에 메시지를 게시한다. 게시 즉시 발신자를 제외한 모든 참가자(Lead 포함)에게 확인 노크가 전달된다. ' +
       '수신자(to)를 지정해도 보드는 전원에게 공개(브로드캐스트)다 — to 는 "누가 작업/응답할 차례인가"의 지정이다. ' +
-      '요청(type=request)에 응답할 때는 reply_to 에 그 요청의 메시지 id 를 반드시 지정할 것 — 미응답 요청 추적이 이 연결로 해소된다.',
+      '요청(type=request)에 응답할 때는 reply_to 에 그 요청의 메시지 id 를 반드시 지정할 것 — 미응답 요청 추적이 이 연결로 해소된다. ' +
+      'code_mode_only 모델(이 도구가 top-level 에 안 보임)은 exec 안에서 await tools.mcp__bus__post_message({to,content,...}) 로 호출한다 — 텍스트 출력만으로는 발언이 게시되지 않는다.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -529,7 +547,8 @@ const MCP_TOOLS = [
   {
     name: 'check_messages',
     description:
-      '버스 보드에서 본인이 아직 읽지 않은 새 메시지를 모두 가져온다. "[bus] 메시지 확인" 노크를 받으면 즉시 호출할 것. ' +
+      '버스 보드에서 본인이 아직 읽지 않은 새 메시지를 모두 가져온다. "[bus] 메시지 확인" 노크를 받으면 즉시 호출할 것 — 도구 호출 없이 "확인했습니다" 텍스트만 출력하는 것은 확인이 아니다. ' +
+      'code_mode_only 모델(이 도구가 top-level 에 안 보임)은 exec 안에서 await tools.mcp__bus__check_messages({}) 로 호출한다. ' +
       '수신자가 본인인 메시지는 작업 후 post_message 로 응답하고, 아니면 컨텍스트로만 검토한다. ' +
       '출력의 "⚠ 미응답 요청" 섹션은 본인 대상 request 중 아직 응답하지 않은 것 — 읽음 여부와 무관하게 매번 표시되므로, 게시·응답 시점 무관 id 순으로 전부 처리하고 응답 시 reply_to 로 요청 id 를 명시할 것.',
     inputSchema: {

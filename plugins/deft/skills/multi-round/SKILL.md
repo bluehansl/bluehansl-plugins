@@ -161,7 +161,7 @@ multi-round 는 두 통신 모드로 동작한다. **차이는 브로드캐스�
 | 채널 | 매체 | 싣는 것 |
 |---|---|---|
 | **데이터** | 버스 보드 (`board.jsonl`, MCP 도구 / bin CLI 로 접근) | 본문 전부 — 줄바꿈·마크다운·길이 제한 없음 (파일 기반 — cmux/orca 환경 무관) |
-| **제어** | 노크 — inbox `ntpPush`(회의 워커·orca 모드 유일 경로) 또는 `cmux send`(cmux 모드 surface 폴백) | `[bus] 메시지 확인` 한 줄만 |
+| **제어** | 노크 — inbox `ntpPush`(회의 워커·orca 모드 유일 경로) 또는 `cmux send`(cmux 모드 surface 폴백) | 노크 한 줄만 — 워커용은 `[bus] 메시지 확인 — check_messages 도구 호출 (…exec 힌트)` 장문, Lead 용은 `[bus] 메시지 확인` 단문. 판정 매칭은 **prefix `[bus] 메시지 확인` 기준** (완전일치 금지) |
 
 → `cmux send` 의 줄바꿈 조기 제출·sanitize·capture 노이즈 문제가 **구조적으로 사라진다**. pane 은 시각화·사용자 직접 개입 전용, 통신은 보드 전용.
 
@@ -322,6 +322,9 @@ WSURF_x=$(printf '%s' "$HELPER_OUT" | jq -r '.surface')   # 회의 모드면 (5)
 # 이후 claudex 워커는 .last-worker-pane 자동 연쇄(직전 claudex 아래로).
 # 🔑 DEFT_BUS_DIR 설정(회의 모드) → 헬퍼가 --claude-team-agent(이름표·ntpPush) + -c mcp_servers.bus(board)
 #    를 함께 박는다 = NTP+버스 2채널 공존(근거: RATIONALE R-16). 작업 모드면 DEFT_BUS_DIR 생략(순수 NTP).
+# 🔑 헬퍼는 워커 모델을 -m 으로 자동 고정(기본 deft-model codex = gpt-5.5, DEFT_CODEX_MODEL 오버라이드).
+#    미고정 시 사용자 config.toml 기본 모델(gpt-5.6 계열 = code_mode_only)로 부팅되어 버스 MCP 도구가
+#    top-level 미노출 → 텍스트 ACK 만 하는 장애가 난다(근거: RATIONALE R-17).
 # 팀 config 미등록 이름도 SendMessage 가 그대로 배달하므로 멤버 stub 선등록 불요.
 ```
 
@@ -684,7 +687,7 @@ Phase 0 결과 + 참가자 구성으로 §통신 우선순위 매트릭스에서
 
 #### 3-A. 메시지 버스 경로 (pane 환경 && `HAVE_BUS=1` — 기본)
 
-> 🟠 **orca 모드 (§환경 판정)**: 이하 (1)~(5)의 bare cmux 호출은 전부 금지(오발사) — ① (1)의 `cmux identify` 캡처(LEAD_SURFACE/LEAD_WORKSPACE) skip. Lead 등록은 (2) 첫 워커 spawn 으로 TID 확보 **후** `--surface "$ORCA_TERMINAL_HANDLE"`(Lead 터미널 핸들 — 버스가 `orca terminal send` 로 노크) + `--inbox ~/.claude/teams/$TID/inboxes/team-lead.json`(ntpPush) 로 한다. 자동주입 유실 대비 무응답 시 `check --as lead` 수동 1회 병행. ② (3) `.last-worker-pane` 기록 skip — orca 는 헬퍼가 `.last-worker-terminal` 로 자동 연쇄(§용례 1 🟠). ③ (4) 헬퍼 호출은 **cmux 와 동일**(orca 자동 분기 — `DEFT_BASE_WORKSPACE` 만 불요). ④ (5-a) 워커 register 는 헬퍼 JSON 의 `.terminal` 핸들을 `--surface` 로 + `--inbox` 병행.
+> 🟠 **orca 모드 (§환경 판정)**: 이하 (1)~(5)의 bare cmux 호출은 전부 금지(오발사) — ① (1)의 `cmux identify` 캡처(LEAD_SURFACE/LEAD_WORKSPACE) skip. Lead 등록은 (2) 첫 워커 spawn 으로 TID 확보 **후** **`--kind lead`** + `--surface "$ORCA_TERMINAL_HANDLE"`(Lead 터미널 핸들 — 버스가 `orca terminal send` 로 노크) + `--inbox ~/.claude/teams/$TID/inboxes/team-lead.json`(ntpPush) 로 한다 (⚠️ `--kind lead` 누락 시 kind 기본값 worker 로 등록되어 Lead 가 워커용 장문 노크를 받는다 — 버스가 이름 `lead` 예약어로 방어하지만 명시가 원칙). 자동주입 유실 대비 무응답 시 `check --as lead` 수동 1회 병행. ② (3) `.last-worker-pane` 기록 skip — orca 는 헬퍼가 `.last-worker-terminal` 로 자동 연쇄(§용례 1 🟠). ③ (4) 헬퍼 호출은 **cmux 와 동일**(orca 자동 분기 — `DEFT_BASE_WORKSPACE` 만 불요). ④ (5-a) 워커 register 는 헬퍼 JSON 의 `.terminal` 핸들을 `--surface` 로 + `--inbox` 병행.
 
 **(1) Lead surface 캡처 + Lead 등록** (cmux 모드)
 
@@ -768,7 +771,7 @@ WSURF_claude=$(printf '%s' "$HELPER_OUT" | jq -r '.surface' 2>/dev/null)
   --content "<페르소나 본문 + 회의 정보 + 라운드 1 의제>"
 ```
 
-- 🔑 **`--inbox` 가 ntpPush 의 스위치**(근거: RATIONALE R-16, 버스 178행 `info.inbox ? ntpPush : cmuxKnock`): 헬퍼로 띄운 워커는 `~/.claude/teams/$TID/inboxes/<name>.json` 을 watch 하므로, register 에 그 경로를 `--inbox` 로 주면 노크가 **느린 cmuxKnock 대신 빠른 ntpPush**(팀 inbox 직접 적재 → 워커 턴 자동 주입)로 간다. 이 인자를 빠뜨리면 surface 노크로 폴백(회귀).
+- 🔑 **`--inbox` 가 ntpPush 의 스위치**(근거: RATIONALE R-16, 버스 `knockOthers` 의 `info.inbox ? ntpPush(...) : cmuxKnock(...)` 분기): 헬퍼로 띄운 워커는 `~/.claude/teams/$TID/inboxes/<name>.json` 을 watch 하므로, register 에 그 경로를 `--inbox` 로 주면 노크가 **느린 cmuxKnock 대신 빠른 ntpPush**(팀 inbox 직접 적재 → 워커 턴 자동 주입)로 간다. 이 인자를 빠뜨리면 surface 노크로 폴백(회귀).
 - **응답 회수 2경로 (워커 유형별 — 근거: RATIONALE R-1·R-16)**:
   - **헬퍼 워커**(claudex / claude-CLI): board 로 응답 → `"$BUS_BIN" check --session "$SESSION_DIR" --as lead`.
   - **첫 워커**(Agent tool): board MCP 직결 불가 → `SendMessage` 로 의제·후속을 중계하고, 응답은 **`team-lead.json` 직접 회수**(회수 루프를 `&` 로 먼저 띄운 뒤 SendMessage — §Lead 직접 회수).
@@ -785,7 +788,7 @@ WSURF_claude=$(printf '%s' "$HELPER_OUT" | jq -r '.surface' 2>/dev/null)
 
 버스 불가 시 구형 경로 — pane TUI 에 직접 prompt 주입 + 화면 캡처로 응답 수집.
 
-- TUI 기동: `claudex -m gpt-5.5 -c mcp_servers={}` (claudex 없으면 codex, 그것도 없으면 `claude --model "$(deft-model claude 2>/dev/null||echo claude-fable-5)"`)
+- TUI 기동: `claudex -m "$(deft-model codex 2>/dev/null||echo gpt-5.5)" -c mcp_servers={}` (claudex 없으면 codex, 그것도 없으면 `claude --model "$(deft-model claude 2>/dev/null||echo claude-fable-5)"`)
 - prompt 주입 시 **줄바꿈 sanitize 필수**: `PROMPT_SAFE=$(tr '\n' ' ' < file)` 후 `cmux send` + `cmux send-key Enter` (`\n` 은 Enter 로 해석되어 조기 제출됨)
 - 긴 prompt 는 `$SESSION_DIR/round<N>-<worker>.md` 저장 후 "Read <경로>" 한 줄만 send
 - 응답 감지 2단: ① `capture-pane --scrollback` 에서 `DONE:` 센티넬 grep ② idle-stable 폴링 (20줄 캡처 동일 반복 시 완료 간주, 8초 간격 최대 30회)
@@ -798,6 +801,7 @@ pane 시각화 불가 환경(cmux/orca 어느 쪽도 아님)의 지속 대화 �
 ```
 mcp__claudex__codex(prompt: "<페르소나 + 라운드1>", model: "gpt-5.5", developer-instructions: "<agents/codex-participant.md 본문>")
 → conversationId 저장. 이후 라운드는 mcp__claudex__codex-reply(conversationId, prompt) — stateful 지속 대화 (1-shot 재전송 아님)
+# model 은 deft-model codex 값(direct tool 모델 — 기본 gpt-5.5)을 쓴다. gpt-5.6 계열(code_mode_only) 지정 시 RATIONALE R-17 참조.
 ```
 
 claudex MCP 미등록·미설치면 multi-check 안내 후 중단.
@@ -845,11 +849,12 @@ Lead 의 라운드 동작:
 
 #### 4-B. 워커 측 프로토콜 (페르소나에 명시 — agents/*.md)
 
-1. `[bus] 메시지 확인` 입력 수신 → 즉시 `check_messages`
+1. `[bus] 메시지 확인` 노크 수신 → 즉시 `check_messages` **도구 호출** (텍스트 "확인했습니다" 출력은 확인이 아님)
 2. 새 메시지 각각에 대해:
    - **수신자 = 본인 (또는 all)** → 작업 수행 → `post_message`(to=요청자, type=response) 로 응답. 마지막 줄 `DONE:` 센티넬
    - **수신자 ≠ 본인** → 컨텍스트로만 검토 (작업 X). 논의에 기여할 내용이 있을 때만 수신자를 지정해 자발 발언 (`type=comment`)
 3. 자발 발언은 라운드당 최대 1회 권장 (노이즈 방지)
+4. 🔧 **codex 모델 tool_mode 이원화 (RATIONALE R-17)**: direct tool 모델(gpt-5.5 계열)은 버스 도구를 top-level 로 직접 호출하지만, **code_mode_only 모델(gpt-5.6-sol/terra/luna)은 top-level 에 버스 도구가 없어 `exec` 안에서 `tools.mcp__bus__check_messages({})` / `tools.mcp__bus__post_message({...})` nested 호출**로만 가능하다. 노크 문구·버스 도구 설명·페르소나(§도구 호출 표면)가 이 지침을 삼중으로 싣는다 — Lead 는 spawn 헬퍼의 모델 고정(기본 gpt-5.5)으로 이 함정을 원천 회피하고, code_mode_only 모델을 명시 사용할 땐 워커가 exec 호출을 실제로 하는지 첫 라운드에서 확인한다(board 에 응답이 실리는지).
 
 #### 4-C. 라운드 진행 — 자동 진행 (사용자 질문 X)
 
@@ -986,6 +991,7 @@ Lead 의 라운드 동작:
 | orca 모드에서 rebalance 계열/deft-cmux-shim 이 "orca 모드" no-op/차단 출력 | 정상 가드 동작 — cmux 경로 재시도 금지. spawn 헬퍼·버스 노크는 orca 자동 분기라 차단되지 않는다 |
 | 노크 실패 (cmux send 에러) | 버스가 결과에 `failed` 로 보고 — 메시지는 보드에 안전하게 남아 다음 check 때 수신. Lead 는 timeout 시 수동 check |
 | 라운드 timeout (기본 300s, 노크 안 옴) | Lead 수동 `check` 1회 + 해당 워커 pane 상태 확인 → 그래도 무응답이면 skip 하고 남은 워커로 종합 |
+| codex 워커가 노크마다 "ACK: 확인했습니다" 텍스트만 출력하고 board 에 안 실림 | code_mode_only 모델(gpt-5.6 계열) 함정 — 버스 도구가 top-level 미노출 (RATIONALE R-17). 워커 pane 에 exec 호출 지시 1줄 주입(`exec 로 await tools.mcp__bus__check_messages({}) 를 호출해 미독 메시지를 처리하라`) → 그래도 무응답이면 해당 워커를 direct tool 모델(gpt-5.5)로 재spawn |
 | 워커가 spawn 직후 사망 (바이너리 경로 오류 등) | 죽은 pane 정리(프로세스 0 확인 후 close-surface) → 재spawn → rebalancing 재호출 |
 | 한 워커 BLOCKED | 사용자에게 즉시 보고 + 결정 위임 |
 | max-round 도달 (기본 5) | Phase 5 종합 — 미합의 항목 명시 + Lead 권장안 1개 제시 |
@@ -1011,6 +1017,7 @@ Lead 의 라운드 동작:
 ```
 - 응답 언어: 한국어
 - **응답 채널: board (post_message) 전용** — '[bus] 메시지 확인' 노크 수신 시 즉시 check_messages → 수신자 본인이면 작업 후 **post_message 로 board 에 응답** / 아니면 검토만 (자발 발언은 기여할 내용 있을 때 1회). 🚨 **claude 워커도 board 에 post 한다 — NTP `SendMessage` 로 Lead 에 보고하지 말 것**(두 채널 보유 시 혼동 금지). board 가 단일 진실 소스라 다른 참가자가 네 입장을 board 에서 봐야 토론 성립.
+- **도구 호출 표면 (codex/claudex 워커)**: check_messages/post_message 가 top-level 도구로 보이면 직접 호출. **top-level 에 없으면(code_mode_only 모델 — gpt-5.6 계열) 반드시 exec 안에서 `await tools.mcp__bus__check_messages({})` / `await tools.mcp__bus__post_message({to,type,reply_to,content})` 로 호출**. 🚨 도구 호출 없이 "ACK: 확인했습니다" 텍스트만 출력하고 턴 종료 금지 — 확인도 응답도 아니다.
 - **발언 time-box (속도 — 실측 검증)**: 핵심 권장 + 근거 1~3줄로 **간결히**. 회의는 의견·설계 토론이므로 **과도한 web search(수십 회)·장문 분석 금지** — 아는 지식으로 신속히 응답해 라운드 지연을 막는다. (multi-check 의 time-box 와 동일 사상 — claudex/codex 워커가 web search 로 수 분 늘어지면 라운드가 정체됨. 심층 사실확인이 핵심이면 multi-check/deep-research 가 적합)
 - 응답 마지막 줄에 'DONE:' 센티넬 (버스 메시지 본문 안에)
 - 회의 모드: {consult|dialogue|collaborate|debate}

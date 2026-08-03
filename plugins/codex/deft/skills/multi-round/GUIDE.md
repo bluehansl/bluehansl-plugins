@@ -260,6 +260,7 @@ multi-round skill 내부에 다음 가드가 강제됩니다. 사용자가 직�
 | "메시지 버스: NO" — send/capture 폴백으로 강등 | node 미설치 또는 `multi-round-bus` 헬퍼 미발견 | `which node` 확인. plugin 동봉본 자동 설치 실패 시 `~/.codex/plugins/cache/bluehansl-codex/deft/*/bin/multi-round-bus` 를 `~/.local/bin/` 으로 수동 복사 | §1, §5-3 |
 | 노크(`[bus] 메시지 확인`)가 안 옴 — Lead 가 워커 응답을 모름 | cmux send 실패 또는 워커가 post 안 함 | `multi-round-bus check --session <dir> --as lead` 수동 1회 → 보드에 응답 있으면 노크만 유실(메시지는 안전). 보드에도 없으면 워커 pane 상태 확인 | §5-1 노크 |
 | 워커가 노크를 받고도 보드를 안 읽음 | 부트 prompt 의 버스 지침 누락 | 워커 pane 에 "check_messages 를 호출해 새 메시지를 확인하세요" 직접 입력 (1회 교정 — 이후 학습됨) | §5-1 |
+| claudex/codex 워커가 노크마다 "ACK: 확인했습니다" 텍스트만 출력 — 도구 호출 없음, board 무진행 | code_mode_only 모델(gpt-5.6-sol/terra/luna) — 버스 MCP 도구가 top-level 에 없어 자연어로만 응답 | `codex-1.25.0+` 로 업데이트(spawn 모델 명시 + 노크·페르소나에 exec 호출 지침). 이미 떠 있는 워커는 pane 에 "exec 로 await tools.mcp__bus__check_messages({}) 를 호출해 미독 메시지를 처리하라" 직접 입력, 그래도 안 되면 gpt-5.5 로 재spawn | SKILL §4-B tool_mode 이원화 |
 | 워커가 버스 도구 호출 시 승인 프롬프트가 뜸 / 호출이 취소됨 | MCP 도구 호출 승인 elicitation (claudex/codex 기본 동작) | spawn 명령의 `--disable tool_call_mcp_elicitation` 포함 확인. 이미 뜬 프롬프트는 워커 pane 에서 1회 승인 | §Phase 3-A (4) |
 | 분할 직후 send 한 명령이 사라짐 (워커 미기동) | cmux lazy-init — surface 가 화면에 렌더될 때 쉘 기동 | cmux 창을 화면에 보이게 한 뒤 readiness 마커 가드(§Phase 3-A (3.5)) 통과 후 재전송 | §Phase 3-A (3.5) |
 | 워커가 보드는 읽는데 발언(post)을 못 함 — 회의 정지 | 워커 pane 이 don't ask 등 제한 권한 모드 — 버스 도구가 allowlist 에 없어 자동 거부 | claude 워커 spawn 에 `--allowedTools mcp__bus__*` 3종 포함 확인 (스킬 기본). 이미 떠 있는 pane 은 shift+tab 으로 모드 전환 후 노크 재전송 | §Phase 3-A (4) |

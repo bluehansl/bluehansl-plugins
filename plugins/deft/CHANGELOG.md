@@ -4,6 +4,41 @@
 
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 를 따르며, 버전 체계는 [Semantic Versioning](https://semver.org/lang/ko/) 을 사용합니다 (`claude-X.Y.Z` / `codex-X.Y.Z` 접두).
 
+## [claude-2.50.0] - 2026-08-03
+
+> **codex code_mode_only 모델(gpt-5.6 계열) 버스 장애 대응 (RATIONALE R-17)** — claudex 회의 워커가 gpt-5.6-sol(tool_mode=`code_mode_only`)로 부팅되면 버스 MCP 도구(`check_messages`/`post_message`)가 top-level 에 노출되지 않아, 노크를 받고도 실제 도구 호출 없이 "ACK: 메시지 확인했습니다" 텍스트만 출력하고 턴을 끝내는 실측 장애. code_mode_only 모델은 exec 내부 `tools.mcp__bus__*` nested 호출만 가능한데 deft 프롬프트가 direct tool 전제로 쓰여 있었고, 프로토콜이 board 첫 메시지로 전달되는 구조라 첫 check 실패 시 지침 자체를 못 읽는 부트스트랩 공백이 증폭. **NTP `send_message` 는 무관**(`multi_agent_v2.non_code_mode_only` 기본 true → DirectModelOnly — claudex 소스 확정) — 작업 모드·agent-teams(전원 claude)·multi-check(`deft-review` gpt-5.5 고정 + headless exec)는 영향 없음.
+
+### Added
+- `bin/deft-claudex-native-spawn` — **워커 모델 `-m` 자동 고정** (기본 `deft-model codex`=gpt-5.5, `DEFT_CODEX_MODEL` 오버라이드). 미고정 시 사용자 `~/.codex/config.toml` 기본 모델(gpt-5.6 계열)로 부팅되던 구조적 원인 제거. spawn JSON 출력에 `model` 필드 추가. 모델 값 문자셋 검증 가드(영숫자 `. _ : -` 외 즉시 에러) — 공백·따옴표 섞인 값이 LAUNCH 인용을 깨 좀비 pane(조용한 회의 정지)이 되는 것을 fail-fast 로 차단.
+- multi-round `agents/codex-participant.md` — **§도구 호출 표면 (tool_mode 이원화)**: direct vs code_mode_only 표 + exec nested 호출 예제(`tools.mcp__bus__check_messages({})`/`tools.mcp__bus__post_message({...})`) + "도구 호출 없는 텍스트 ACK 금지" 명시.
+- multi-round `SKILL.md` §4-B(4)·워커 prompt 표준 inject·Error Handling — tool_mode 이원화 지침·code_mode_only 증상 대응 행 추가.
+- `RATIONALE.md` — R-17 신설 (사고·원인·삼중 안전·NTP 안전 근거).
+
+### Changed
+- `bin/multi-round-bus` — **워커 노크 문구에 호출 표면 힌트 추가**: `[bus] 메시지 확인 — check_messages 도구 호출 (도구가 top-level 에 없으면 exec 안에서 await tools.mcp__bus__check_messages({}))`. 부트스트랩 공백(첫 check 전엔 board 의 프로토콜을 못 읽음)을 상시 지침이 메움. Lead 노크는 기존 짧은 문구 유지(`kind=lead` 분기 — Lead 는 CLI check 경로라 도구 힌트 불요. `watch` STALLED 재노크도 동일 분기). `check_messages`/`post_message` MCP 도구 설명에도 code_mode_only 호출법 명시.
+- `bin/deft-model` — CODEX_DEFAULT 를 gpt-5.6 계열로 올릴 때의 tool_mode 주의 주석 추가.
+- multi-round `SKILL.md` 3-B/3-C — 하드코딩 `gpt-5.5` 를 `deft-model codex` 참조로 일원화.
+
+### Fixed (셀프 코드리뷰 반영 — xhigh 8건)
+- `bin/multi-round-bus` — `watch` STALLED 재노크에 **inbox 우선(ntpPush) 폴백** 추가: 종전 surface 전용이라 inbox-only 참가자(orca 등)는 회복 수단인 재노크가 아예 시도되지 않았다(잠복 결함 — 스모크 실측 검증). Lead 판정에 **이름 `lead` 예약어 방어 폴백** 추가(`--kind lead` 생략 등록 시에도 단문 노크 — 실측 검증).
+- `bin/deft-claudex-native-spawn` — DEFT_CODEX_MODEL 우선순위 판단을 deft-model 단일 소유로 일원화(이중 구현 제거 — 폴백만 오버라이드 보존).
+- multi-round `SKILL.md` — 통신 채널 표의 "노크 한 줄만" stale 서술 갱신(워커 장문/Lead 단문 + prefix 매칭 명시), orca Lead 등록 지침에 `--kind lead` 명시, "버스 178행" stale 라인 앵커를 `knockOthers` 함수명 앵커로 교체.
+- multi-round `agents/claude-participant.md` — 노크의 exec 힌트는 codex 계열 전용임을 명시(claude 워커의 Bash/JS 재현 시도 오진 방지).
+
+## [codex-1.25.0] - 2026-08-03
+
+> **Claude 측 claude-2.50.0 의 code_mode_only 대응 이식** — Codex 포트는 spawn 이 문서상 `-m gpt-5.5` 고정이라 기본은 안전했으나, 모델 변경 시 동일 장애가 나므로 방어를 동기화.
+
+### Added
+- multi-round `agents/codex-participant.md` — §도구 호출 표면 (tool_mode 이원화 표 + exec 호출 예제 + 텍스트 ACK 금지).
+- multi-round `SKILL.md` §4-B(4)·워커 prompt 표준 inject·Error Handling — tool_mode 이원화 지침·증상 대응 행 추가.
+
+### Changed
+- `bin/multi-round-bus` — Claude 측과 동일 (노크 문구 호출 표면 힌트 + Lead 분기·이름 예약어 방어 + watch 재노크 inbox 폴백 + 도구 설명 보강. bin 주석의 RATIONALE 참조는 "Claude 측 plugins/deft/RATIONALE.md R-17" 로 명시 — 포트 트리에 없는 파일의 dangling 참조 해소).
+- multi-round `SKILL.md` (4) WORKER_CMD — 하드코딩 `-m gpt-5.5` 를 `deft-model codex` 참조로 일원화 + **`-m '$WORKER_MODEL'` 인용 + 문자셋 검증 가드**(미인용 전개는 공백·메타문자 값에서 word-splitting/셸 인젝션 — 리뷰 CONFIRMED 정정) + 모델 명시 필수 사유 주석. (5) PERSONA_BOOT 에 code_mode_only exec 폴백 문구 추가. 3-B TUI 기동도 `deft-model codex` 참조로 교체. 통신 채널 표 노크 서술 갱신 + orca Lead 등록 `--kind lead` 명시.
+- multi-round `agents/claude-participant.md` — 노크의 exec 힌트는 codex 계열 전용임을 명시.
+- `bin/deft-model` — CODEX_DEFAULT tool_mode 주의 주석 추가.
+
 ## [codex-1.24.0] - 2026-07-31
 
 > **Codex 포트 페르소나 레벨업** — Claude 측 `claude-2.49.0`의 multi-round 변경 중 Codex 포트에 해당하는 페르소나 합성 우선순위와 엔진 배정 휴리스틱을 현재 포트 구조에 맞게 이식. 통신·신호·보고 규약은 변경 없이 유지.
