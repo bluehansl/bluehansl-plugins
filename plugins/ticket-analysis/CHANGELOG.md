@@ -1,5 +1,10 @@
 # Changelog — ticket-analysis
 
+## codex-0.1.0 (2026-07-31)
+
+- Codex 포팅본 최초 릴리스 (`plugins/codex/ticket-analysis/`) — Claude판 claude-0.1.0과 동일 내용 (스킬 6문서 verbatim 복사)
+- `.codex-plugin/plugin.json` 메타 + Codex 마켓(`.agents/plugins/marketplace.json`) 등록
+
 ## claude-0.1.0 (2026-07-31)
 
 - 최초 릴리스: 티켓 분석·운영 스킬

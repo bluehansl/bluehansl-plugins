@@ -27,6 +27,18 @@
         "authentication": "ON_INSTALL"
       },
       "category": "Developer Tools"
+    },
+    {
+      "name": "ticket-analysis",
+      "source": {
+        "source": "local",
+        "path": "./plugins/codex/ticket-analysis"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
     }
   ]
 }

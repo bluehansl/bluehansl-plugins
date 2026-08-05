@@ -1,0 +1,37 @@
+{
+  "name": "ticket-analysis",
+  "version": "codex-0.1.0",
+  "description": "이슈 티켓 작업의 선언부터 결과 보고까지 — 티켓 컨텍스트 로드(이슈 트래커 본문·댓글·연결 이슈, ticket.md), 단계별 승인 절차, 산출물 경로 라우팅, 요건 정제 / Plan 작성 / 버그 원인 진단 방법론(obra/superpowers MIT 선별 이식)을 하나의 스킬로 제공. 호스트 지침에는 트리거 문구만 남기는 단일 소스 설계.",
+  "author": {
+    "name": "bluehansl",
+    "email": "bluehansl@naver.com"
+  },
+  "homepage": "https://github.com/bluehansl/deft",
+  "repository": "https://github.com/bluehansl/deft",
+  "license": "Personal use only (methodology portions adapted from obra/superpowers, MIT License)",
+  "keywords": [
+    "codex",
+    "ticket",
+    "workflow",
+    "requirement-analysis",
+    "planning",
+    "root-cause"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "ticket-analysis",
+    "shortDescription": "이슈 티켓 분석·운영 워크플로 스킬.",
+    "longDescription": "ticket-analysis 는 이슈 티켓 작업의 선언~결과 보고 전체를 소유하는 스킬이다: 티켓 컨텍스트 로드(트래커 본문·댓글·연결 이슈 분석, ticket.md), 단계별 승인 절차(7단계), 체크리스트 문법, 산출물 경로 라우팅, 그리고 요건 정제·Plan 작성·버그 원인 진단 방법론을 제공한다.",
+    "developerName": "bluehansl",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive"
+    ],
+    "websiteURL": "https://github.com/bluehansl/deft",
+    "defaultPrompt": [
+      "현재 작업이 IT-12345야. 요건 분석 시작하자.",
+      "이 티켓 요건 정리해줘.",
+      "버그 원인 분석부터 진행해줘."
+    ]
+  }
+}
