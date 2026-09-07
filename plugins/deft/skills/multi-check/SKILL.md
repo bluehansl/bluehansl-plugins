@@ -224,6 +224,9 @@ Bash(run_in_background: true): cmux-rebalance-watch "$LEAD_REF" "$BASE" "$EXPECT
 > ⚠️ **센티널 없는 보고는 본문을 한 번 확인한다** — 구버전 리뷰어 하위호환을 위해 센티널 없는 보고를 결과로 취급하지만, 본문이 **검토 결과가 아니라 CLI 에러**(인증·티어·model·sandbox 오류 등)면 `FAILED` 로 간주해 그 엔진을 skip 한다. 에러 본문을 그대로 취합하면 사용자가 그것을 검토 의견으로 읽는다.
 | `TIMEOUT_PARTIAL` | **아직 background 에서 실행 중** | 🛑 **shutdown 보류** — 그 리뷰어를 살려둔 채 최종 `RESULT` 재보고를 기다린다 |
 | `FAILED` · `*_NOT_INSTALLED` · `*_SKIPPED` | 확정 실패 | ✅ 즉시 `shutdown_request` 후 그 엔진 skip |
+| 위 어디에도 안 맞음 | `UNKNOWN` (구버전 리뷰어·형식 이탈) | 본문을 읽어 결과/에러를 판단 — **실패로 단정하지 말 것**(본문은 유효할 수 있다) |
+
+**센티널은 관대하게 읽는다**: 대소문자 무시, 뒤따르는 `:`·공백 허용(`RESULT:`, `result`), **첫 non-empty 줄부터 앞 3줄까지 스캔**(리뷰어가 인사말·장식 문구를 앞에 붙이는 경우). 그래도 못 찾으면 `UNKNOWN` 으로 격리하고 본문 판단으로 넘어간다 — 센티널 부재는 **형식 이탈이지 실패가 아니다**.
 
 **② per-report 종료 (1-shot 리뷰어 — idle 대기 제거)**: 리뷰어는 1회성이라 보고 후 추가 요청을 기다릴 필요가 없다. **`RESULT`·확정 실패 보고가 도착하는 즉시, 전원 취합을 기다리지 말고 그 리뷰어에게만 `shutdown_request` 를 보낸다.** 리뷰어는 §종료 프로토콜대로 `shutdown_response{approve:true}` 로 즉시 종료 → **pane 이 보고 직후 순차적으로 닫힌다**(동시 일괄 종료가 아니라 보고순 정리). 취합 시점엔 대부분 이미 정리 완료.
 

@@ -4,6 +4,21 @@
 
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 를 따르며, 버전 체계는 [Semantic Versioning](https://semver.org/lang/ko/) 을 사용합니다 (`claude-X.Y.Z` / `codex-X.Y.Z` 접두).
 
+## [claude-2.52.0] - 2026-09-07
+
+> **L4 페르소나 준수 검증 완료 + 센티널 계약 보강** — `claude-2.51.0` 의 미검증 항목(리뷰어 Agent 가 새 센티널 절차를 실제로 이행하는가)을 실측 완료. 검증 과정에서 리뷰어 2인이 독립적으로 제기한 보강안을 반영.
+
+### Added
+- multi-check `SKILL.md` §Phase 4 판별 표 — **`UNKNOWN` 행 신설**(위 센티널 어디에도 안 맞는 보고 = 구버전 리뷰어·형식 이탈). 조치는 "본문을 읽어 결과/에러를 판단, **실패로 단정하지 말 것**". 종전엔 센티널 없는 보고를 `RESULT` 로 취급하고 각주로만 주의를 줬는데, 명시 상태로 승격해 Lead 판단을 분명히 했다.
+- multi-check `SKILL.md` — **센티널 관대 파싱 규칙**: 대소문자 무시, 뒤따르는 `:`·공백 허용(`RESULT:`/`result`), **첫 non-empty 줄부터 앞 3줄까지 스캔**(리뷰어가 인사말·장식을 앞에 붙이는 경우). 못 찾으면 `UNKNOWN` 격리 — 센티널 부재는 **형식 이탈이지 실패가 아니다**.
+- `PENDING.md` P2(detach) — **근거 보강**: "timeout 을 진행 중으로 재정의하는 설계는 작업이 실제로 계속 살아 있다는 **런타임 보장이 있을 때만** 성립하며, parent timeout 이 child 종료로 이어지는 환경에서는 위험한 재정의"(L4 검증 리뷰어 지적). 우리 환경은 child 생존을 실측했으나 그 보장이 **런타임 우연에 기대고 있음** — detach 는 이를 설계로 전환한다. 다만 detach 의 새 책임(job registry·완료 marker·취소 API·리소스 상한)도 함께 지적돼 P2 유지 판단은 불변.
+
+### Verified (deft-test L4 — claude-2.51.0 잔여 해소)
+- **1차 (정상 경로 · timeout 미발동)** — 첫 줄 `RESULT` 센티널 ✅ / `SendMessage` + `summary` 보고 ✅ / 실행 규율(foreground 1회, 선제적 background 없음) ✅ / `shutdown_request` → `shutdown_response` graceful ✅ / pane 자동 정리 ✅. 리뷰어 보고가 Lead inbox 에 즉시 안 보였던 것은 **유실이 아니라 런타임 drain 후 턴 경계 지연**(R-1 의 알려진 동작) — 이후 정상 주입 확인.
+- **2차 (timeout 경로 — 20초로 결정적 강제)** — `17:19:20` 기동 → `17:19:40` timeout → **첫 줄 `TIMEOUT_PARTIAL` + 출력 파일 경로** 중간보고 ✅ / Lead **shutdown 보류** ✅ / 리뷰어가 `BashOutput` 대신 **출력 파일 `Read`** 로 25초 간격 폴링(중간 경과 미보고) ✅ / **background CLI 생존**(pid 실측) ✅ / `17:20:41` **exit 0, 13,026 B 완주** — timeout 을 **61초 초과해 background 에서 완료** ✅ / 첫 줄 `RESULT` 재보고 → shutdown → graceful ✅ / §4-4 정리 0 잔존 ✅.
+- **의미**: 사고 시나리오라면 `17:19:40` 의 `shutdown_request` 가 저 13KB 를 폐기했을 지점이다. Lead 가 센티널을 읽고 **아무것도 하지 않아서** CLI 가 완주했다 — R-18 처방이 설계대로 동작함을 실측 확인.
+- **환경 메모**: 함정 #23(장수 orca 세션 spawn 차단)은 세션 재시작 후 재현되지 않았다 — spawn 정상. "세션 초반에 팀 작업" 요령이 유효함을 재확인.
+
 ## [claude-2.51.0] - 2026-09-07
 
 > **multi-check 리뷰어 전원 timeout → 결과 0 장애 대응 (RATIONALE R-18)** — 페르소나의 Bash timeout 120초가 실제 CLI 소요(gpt-5.5 xhigh, 수 KB 프롬프트 = 3~10분)보다 짧아 **의미 있는 검토는 구조적으로 항상 timeout** 됐고, 그 뒤 Lead 의 per-report `shutdown_request` 가 background 로 밀려 아직 돌던 CLI 까지 거둬 **거의 완성된 분석이 폐기**된 실측 사고(2026-09-07 · orca). 정규 경로로는 양쪽 엔진 모두 결과를 얻지 못했다. 장애 기록 원본은 `skills/multi-check/INCIDENT-2026-09-07-reviewer-timeout.md`.

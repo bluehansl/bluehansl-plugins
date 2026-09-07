@@ -9,39 +9,7 @@
 
 ## 진행 중
 
-- [>] **🔴 multi-check L4 페르소나 준수 검증 (claude-2.51.0 잔여)** — 2026-09-07 착수 · **새 세션에서 재개**
-  - **왜 남았나**: 2.51.0 의 메커니즘(timeout→background→완주)은 실측 PASS 했으나, **리뷰어 Agent 가 새 센티널 절차를 실제로 이행하는지**는 확인 못 했다. 원인은 코드가 아니라 환경 — 장수 orca 세션(49분+)에서 `Failed to create teammate pane: Timed out waiting for the Orca runtime to respond` 로 **Agent spawn 전면 차단**(deft-test 함정 #23 계열).
-  - **⚠️ 전제**: **새 세션 초반에 즉시 실행**할 것(함정 #23 예방 — 세션이 길어지면 또 막힌다).
-  - **재현 절차**:
-    ```bash
-    WT=~/orca/workspaces/bluehansl-plugins/deft-fix        # 또는 현 워크트리
-    # (1) 신버전 헬퍼 스테이징 (캐시는 아직 2.50.0 — 배포 전이라 수동)
-    cp ~/.local/bin/deft-review /tmp/deft-review.BACKUP
-    cp $WT/plugins/deft/bin/deft-review ~/.local/bin/ && chmod +x ~/.local/bin/deft-review
-    # (2) timeout 을 60초로 낮춘 테스트 페르소나 (경로를 결정적으로 강제 — deft-test 함정 #27)
-    sed 's/timeout 600000/timeout 60000/; s/10분 timeout 을/60초 timeout 을/' \
-      $WT/plugins/deft/skills/multi-check/agents/codex-reviewer.md > /tmp/codex-reviewer-TEST60.md
-    ```
-    (3) 위 페르소나를 **Agent prompt 에 인라인**해 `codex-reviewer`(model haiku) spawn. 검토 과제는 3분 이상 걸릴 만한 설계 비교 질문 + "웹 검색 절대 금지".
-    (4) 검증 후 원복: `cp /tmp/deft-review.BACKUP ~/.local/bin/deft-review`
-  - **PASS 기준** (하나라도 어긋나면 페르소나 문구 수정):
-    - [ ] 60초 timeout 후 리뷰어가 **첫 줄 `TIMEOUT_PARTIAL`** 로 중간 보고 (평문 서술 아님)
-    - [ ] 보고에 **출력 파일 경로** 포함 (`BashOutput` 을 호출하지 않을 것 — deprecated, 함정 #25)
-    - [ ] Lead 가 `shutdown_request` 를 **보내지 않는** 동안 리뷰어가 출력 파일 `Read` 로 완료를 이어받음
-    - [ ] 완료 후 **첫 줄 `RESULT`** 로 재보고 → 그때 Lead 가 shutdown → `shutdown_response` 로 graceful 종료
-    - [ ] 중간 경과를 반복 보고하지 않음(노이즈 규율 준수)
-  - **참고**: 실행 실패 경로(`FAILED` 센티널)는 gemini 리뷰어로 확인 가능 — 현 환경의 gemini 는 `IneligibleTierError`(계정 티어)라 **항상 실패**하므로 FAILED 보고 여부를 덤으로 볼 수 있다.
-
-
-- [>] **SKILL.md 정리 — 테스트성·로그성·일지형 주석 걷어내기** (2026-06-25 착수)
-  - 목표: 산재한 deft-log 호출 간소화(출력 레지스터 정책은 유지), 일지형 실측 주석을 RATIONALE.md 로 이관 후 SKILL.md 는 간결한 지침+`(근거: R-N)` 참조만, deft-test 연계·임시 잔재 제거.
-  - **multi-round 1차 완료**: `RATIONALE.md` 신설(R-1~R-14) + 핵심 일지형 6건 RATIONALE 참조 축약 + deft-test L4 연계 제거. 실측 언급 39→32.
-  - **남은 작업**:
-    - [ ] multi-round 산재 deft-log 호출 17개 → 핵심 마일스톤만 간소화(§출력 레지스터 정책은 유지)
-    - [ ] multi-round 짧은 인라인 실측 언급(32건) 중 불필요한 것 추가 정리
-    - [ ] agent-teams SKILL.md 정리(deft-log 10·실측주석 13) — RATIONALE 에 항목 추가하며
-    - [ ] multi-check SKILL.md 정리(실측주석 13)
-
+(없음 — 진행 중 항목은 완료 시 CHANGELOG 로 이관)
 ## 보류 / 대기
 
 - [ ] **multi-check 리뷰어 CLI detach — 리뷰어 종료와 CLI 수명 분리** (2026-09-07 등재 · P2)
@@ -49,6 +17,7 @@
   - **제안**: `deft-review` 가 CLI 를 `setsid` 등으로 부모와 분리해 띄우고 출력을 파일로 tee → 리뷰어가 언제 종료돼도 결과 파일이 완성된다. Codex 포트가 이미 이 성질을 갖고 있다(pane 독립 프로세스 + tee) — 사고가 Claude 측에서만 난 이유.
   - **미착수 사유**: ① 2.51.0 의 센티널 분기로 실사용 재발은 막혔다(우선순위 하락) ② detach 는 페르소나에 raw bash 를 노출하거나 `deft-review` 에 출력파일 규약을 새로 만들어야 해 **표면 변경 범위가 P0 대비 크다** ③ 고아 프로세스 정리 책임이 새로 생긴다(현재는 리뷰어와 함께 정리됨).
   - **착수 판단 기준**: 20분 상한(리뷰어 이어받기)을 넘기는 검토가 실제로 반복되면 착수.
+  - **근거 보강 (2026-09-07 L4 검증 중 리뷰어 지적)**: "timeout 을 진행 중으로 재정의하는 설계는 **작업이 실제로 계속 살아 있다는 런타임 보장이 있을 때만** 성립한다. parent timeout 이 child 종료로 이어지는 환경에서는 위험한 재정의다." — 우리 환경은 child 생존을 실측했지만(R-18), 그 보장이 **런타임 우연에 기대고 있다**는 점은 정확하다. detach 는 이 전제를 우연이 아니라 설계로 만든다. 다만 리뷰어도 detach 의 새 책임(job registry·완료 marker·취소 API·리소스 상한)을 함께 지적했으므로 P2 유지 판단은 그대로.
 
 
 - [x] **🔴 Phase 3-A 재작성 — 회의 워커 헬퍼 기반 2채널 공존 복원** (2026-06-25 해결 → claude-2.43.0) — 2.40.0 회귀(빈 pane + CLI 직접부팅으로 `--claude-team-agent` binding 누락 → 이름표 사라짐 + cmuxKnock 폴백)를 R-16 절차(첫 워커 Agent tool + 나머지 헬퍼 `DEFT_BUS_DIR` 주입)로 교체. NTP binding(이름표·ntpPush) + 버스 board 2채널 공존 복원. `--inbox` register 가 ntpPush 스위치. 용례 1 단일 소스 통합·dangling 참조 정정 동반. 근거 RATIONALE R-16. **검증 대기**: 사용자가 다른 워크스페이스 날것 실행으로 확인(bash 직접 실측 금지 — R-8 맹점).
