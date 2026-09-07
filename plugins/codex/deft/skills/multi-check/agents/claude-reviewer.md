@@ -43,7 +43,7 @@ claude -p - --model "$(deft-model claude 2>/dev/null||echo claude-fable-5)" --pe
    CLAUDE_SKIPPED: Claude CLI를 사용할 수 없는 환경입니다.
    ```
 
-4. 실행 가능한 상태면 기본 명령을 실행한다. timeout 권장값은 120초다.
+4. 실행 가능한 상태면 기본 명령을 실행한다. timeout 권장값은 600초다(gpt-5.5 xhigh 로 수 KB 검토 시 3~10분이 정상 — 120초는 항상 실패한다. 근거: R-18). 시간을 넘겨도 pane 프로세스는 살아 있으므로 출력 파일을 파기하지 말고 partial 로 보존한다.
 
 5. timeout, 인증 실패, 토큰 제한, model 오류가 발생하면 실패 사유를 반환하고 종료한다.
 

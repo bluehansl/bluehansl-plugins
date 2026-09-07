@@ -124,18 +124,21 @@ for _ in $(seq 1 15); do [ -f "$OUT_DIR/.ready-r1" ] && break; sleep 1; done
 
 # (3) reviewer 명령 실행 — 출력 tee + 완료 마커 (명령은 한 줄로 — pane 쉘에서 \n 은 즉시 실행)
 PROMPT_FILE="$OUT_DIR/prompt.txt"   # 검토 prompt 는 파일로 저장 (줄바꿈 안전)
-cmux send --surface "$R1" "GEMINI_POLICY_ALLOW_READONLY=true gemini -p \"\$(cat $PROMPT_FILE)\" -m gemini-3-flash-preview --approval-mode plan -o text 2>&1 | tee $OUT_DIR/gemini.out; touch $OUT_DIR/gemini.done"
+cmux send --surface "$R1" "GEMINI_POLICY_ALLOW_READONLY=true gemini -p \"\$(cat $PROMPT_FILE)\" -m gemini-3-flash-preview --approval-mode plan --skip-trust -o text 2>&1 | tee $OUT_DIR/gemini.out; touch $OUT_DIR/gemini.done"
 cmux send-key --surface "$R1" Enter
 
-# (4) 수집 — 전 reviewer 의 .done 마커 폴링 (reviewer 당 timeout 120s, 미완료는 partial 보존 + skip)
-for _ in $(seq 1 60); do
+# (4) 수집 — 전 reviewer 의 .done 마커 폴링 (reviewer 당 timeout 600s, 미완료는 partial 보존 + skip)
+#     ⚠️ 120s 로 두지 말 것 — gpt-5.5 xhigh 로 수 KB 프롬프트를 검토하면 3~10분이 정상이라
+#     짧은 질문에서만 동작하고 스킬 본래 용도(설계·코드 교차검증)에서는 항상 미완료가 된다 (근거: R-18).
+for _ in $(seq 1 300); do
   ls "$OUT_DIR"/*.done >/dev/null 2>&1 && [ "$(ls $OUT_DIR/*.done | wc -l)" -ge "$REVIEWER_COUNT" ] && break
   sleep 2
 done
 ```
 
-- Codex reviewer 는 pane 에서 `"$CODEX_CLI" -a never exec --sandbox read-only -m gpt-5.5 ... | tee $OUT_DIR/codex.out; touch $OUT_DIR/codex.done` 로 동일 패턴.
+- Codex reviewer 는 pane 에서 `"$CODEX_CLI" -a never exec --sandbox read-only --skip-git-repo-check -m gpt-5.5 ... | tee $OUT_DIR/codex.out; touch $OUT_DIR/codex.done` 로 동일 패턴.
 - Claude reviewer 도 동일 (`claude -p ... | tee ...`).
+- **폴링 예산(600s) 초과 시**: Claude 측과 달리 reviewer 는 **독립 pane 프로세스**라 폴링을 멈춰도 계속 실행되고 `tee` 출력 파일은 나중에 완성된다. 따라서 pane 을 닫지 말고 `partial` 로 취합한 뒤, 사용자에게 "해당 엔진은 아직 실행 중 — `$OUT_DIR/<engine>.out` 에서 확인 가능"을 명시한다. (Claude 측의 `TIMEOUT_PARTIAL` 조기 종료 사고는 이 구조 덕에 포트에서는 발생하지 않는다 — 근거: R-18)
 - **quoting 안전 (권장)**: 긴 one-line 명령의 escaping 오류를 피하려면 reviewer 별 runner script 를 생성하고 pane 에는 `sh $OUT_DIR/run-<reviewer>.sh` 한 줄만 send 한다.
 - **마무리 정렬 + focus 복원 (전 reviewer 분할 완료 후 1회)** — 순차 down 분할은 row 높이가 1/2·1/4·1/4 로 남고(실측), `--focus false` 에도 focus 가 마지막 pane 으로 이동할 수 있다:
 
@@ -220,7 +223,7 @@ else CODEX_CLI=""; fi
 기본 명령 (`$CODEX_CLI`는 `claudex` 또는 `codex`):
 
 ```bash
-"$CODEX_CLI" -a never exec --sandbox read-only -m gpt-5.5 -c 'model_reasoning_effort="xhigh"' "<prompt>"
+"$CODEX_CLI" -a never exec --sandbox read-only --skip-git-repo-check -m gpt-5.5 -c 'model_reasoning_effort="xhigh"' "<prompt>"
 ```
 
 - 명령 자체는 검증된 형식이며, claudex는 codex와 옵션·플래그가 완전 호환된다.
@@ -233,11 +236,11 @@ else CODEX_CLI=""; fi
 기본 명령:
 
 ```bash
-GEMINI_POLICY_ALLOW_READONLY=true gemini -p "<prompt>" -m gemini-3-flash-preview --approval-mode plan -o text 2>/dev/null
+GEMINI_POLICY_ALLOW_READONLY=true gemini -p "<prompt>" -m gemini-3-flash-preview --approval-mode plan --skip-trust -o text
 ```
 
 - 사용자 터미널에서 정상 응답이 확인된 명령이다.
-- timeout, 빈 응답, 인증 프롬프트, `FatalCancellationError`가 발생하면 `2>/dev/null`을 제거해 원인을 확인할 수 있다.
+- stderr 는 억제하지 않는다 — timeout·빈 응답·인증 프롬프트·`FatalCancellationError` 의 원인이 그대로 보인다. 종전 `2>/dev/null` 은 잡음과 함께 실패 원인까지 삼켰다(사고 2026-09-07, 근거: R-18).
 - 인증이 필요한 상태면 브라우저 인증을 진행하지 않고 Gemini reviewer를 skip한다.
 
 ### Claude reviewer
@@ -258,12 +261,12 @@ claude -p "<prompt>" --model "$(deft-model claude 2>/dev/null||echo claude-fable
 |---|---|
 | CLI 미설치 | 해당 reviewer skip |
 | 인증 필요 | 인증을 진행하지 않고 skip |
-| timeout | partial output이 있으면 보존하고 skip 사유 기록 |
+| timeout | **pane 프로세스는 계속 살아 있다** — pane 을 닫지 말고 partial output 을 보존한 뒤 skip 사유와 출력 파일 경로를 기록한다. 나중에 `tee` 파일이 완성된다 (근거: R-18) |
 | API/model 오류 | 오류 메시지를 요약해 skip 사유 기록 |
 | Codex sandbox 오류 | 권한 상승 재시도 후 실패 시 skip |
 | 모든 reviewer 실패 | Lead 단독 분석 + 실패 사유 보고 |
 
-권장 timeout은 reviewer당 120초다. 긴 코드 리뷰처럼 요청이 큰 경우 Lead 판단으로 늘릴 수 있다.
+권장 timeout은 reviewer당 **600초**다 — `gpt-5.5` xhigh 로 수 KB 프롬프트를 검토하면 3~10분이 정상이라 120초로 두면 스킬의 본래 용도(설계·코드 교차검증)에서 항상 미완료가 된다(근거: R-18). 더 큰 요청은 Lead 판단으로 늘릴 수 있다.
 
 ## 합성 형식
 

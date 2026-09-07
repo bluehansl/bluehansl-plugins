@@ -14,13 +14,13 @@ Gemini CLI를 사용해 Google Gemini 관점의 검토 결과를 반환한다. �
 기본 명령:
 
 ```bash
-GEMINI_POLICY_ALLOW_READONLY=true gemini -p "<prompt>" -m gemini-3-flash-preview --approval-mode plan -o text 2>/dev/null
+GEMINI_POLICY_ALLOW_READONLY=true gemini -p "<prompt>" -m gemini-3-flash-preview --approval-mode plan --skip-trust -o text
 ```
 
 긴 프롬프트는 stdin으로 전달한다.
 
 ```bash
-GEMINI_POLICY_ALLOW_READONLY=true gemini -p - -m gemini-3-flash-preview --approval-mode plan -o text 2>/dev/null
+GEMINI_POLICY_ALLOW_READONLY=true gemini -p - -m gemini-3-flash-preview --approval-mode plan --skip-trust -o text
 ```
 
 ## 실행 규칙
@@ -37,9 +37,9 @@ GEMINI_POLICY_ALLOW_READONLY=true gemini -p - -m gemini-3-flash-preview --approv
    GEMINI_NOT_INSTALLED: gemini CLI가 설치되어 있지 않습니다.
    ```
 
-3. 설치되어 있으면 기본 명령을 실행한다. timeout 권장값은 120초다.
+3. 설치되어 있으면 기본 명령을 실행한다. timeout 권장값은 600초다(gpt-5.5 xhigh 로 수 KB 검토 시 3~10분이 정상 — 120초는 항상 실패한다. 근거: R-18). 시간을 넘겨도 pane 프로세스는 살아 있으므로 출력 파일을 파기하지 말고 partial 로 보존한다.
 
-4. 응답이 비어 있거나 실패 원인이 가려지면 `2>/dev/null`을 제거해 1회 원인을 확인한다.
+4. stderr 는 억제하지 않는다 — 인증·model 오류 시 빈 출력만 남아 원인 파악이 불가능했던 사고가 있었다(2026-09-07, 근거: R-18). 잡음 경고는 무시하고 결과 본문만 사용한다.
 
 5. 다음 상황은 인증/환경 문제로 판단하고 Gemini reviewer를 skip한다.
 

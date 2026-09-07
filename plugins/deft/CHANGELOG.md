@@ -4,6 +4,48 @@
 
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 를 따르며, 버전 체계는 [Semantic Versioning](https://semver.org/lang/ko/) 을 사용합니다 (`claude-X.Y.Z` / `codex-X.Y.Z` 접두).
 
+## [claude-2.51.0] - 2026-09-07
+
+> **multi-check 리뷰어 전원 timeout → 결과 0 장애 대응 (RATIONALE R-18)** — 페르소나의 Bash timeout 120초가 실제 CLI 소요(gpt-5.5 xhigh, 수 KB 프롬프트 = 3~10분)보다 짧아 **의미 있는 검토는 구조적으로 항상 timeout** 됐고, 그 뒤 Lead 의 per-report `shutdown_request` 가 background 로 밀려 아직 돌던 CLI 까지 거둬 **거의 완성된 분석이 폐기**된 실측 사고(2026-09-07 · orca). 정규 경로로는 양쪽 엔진 모두 결과를 얻지 못했다. 장애 기록 원본은 `skills/multi-check/INCIDENT-2026-09-07-reviewer-timeout.md`.
+> **처방의 핵심은 예산 상향이 아니라 의미 재정의** — Bash 는 timeout 시 작업을 죽이지 않고 background 로 옮기므로 timeout 은 "실패"가 아니라 "진행 중"이다. 숫자만 올리면 10분을 넘기는 검토에서 그대로 재발한다.
+
+### Added
+- multi-check `agents/*-reviewer.md` 3종 — **§실행 timeout 예외 절차**: ① 첫 줄 `TIMEOUT_PARTIAL` 센티널 + **출력 파일 경로**로 중간 보고 ② Bash 가 알려준 **출력 파일을 `Read`** 하며 background 완료를 이어받아 대기(간격 60초+·상한 20분) ③ 완료 시 첫 줄 `RESULT` 로 재보고 ④ 상한 초과 시 `FAILED`.
+- multi-check `SKILL.md` §Phase 4 — **① 보고 종류 판별 표**(`RESULT`/`TIMEOUT_PARTIAL`/`FAILED`·`*_NOT_INSTALLED`·`*_SKIPPED` → Lead 조치) 신설. `TIMEOUT_PARTIAL` 은 **shutdown 보류**. 대기 정책(리뷰어 상한 20분, 초과 시 skip, 부분 출력은 "부분 결과"로 취합) 명시.
+- `RATIONALE.md` — **R-18** 신설 + `## 리뷰어 실행 (multi-check)` 섹션 신설 (4중 연쇄·소스 확정·센티널 채택 근거·포트 차이·"정상 동작했던 것" 오해 방지).
+- `PENDING.md` — P2(리뷰어 CLI detach) 등재 + 미착수 사유·착수 판단 기준.
+
+### Changed
+- multi-check `agents/*-reviewer.md` 3종 — Bash timeout **120000 → 600000**. §Teammate 보고 규약의 "보고 후 대기 안 함(1-shot)" 조항에 **`TIMEOUT_PARTIAL` 은 예외**(최종 보고가 아니므로 계속 이어받음) 단서 추가 — 신규 절차와의 충돌 해소.
+- multi-check `SKILL.md` §Phase 1 — time-box 지침을 **금지형으로 교체**("웹 검색 금지, 꼭 필요하면 1~2회 상한"). 종전 권고형은 claudex 에 **효과가 없었다**(실측: 권고형에서 web search 11회 → 10분 초과, 금지형으로 바꾸자 즉시 준수·수 분 내 완료).
+- `bin/deft-review` — codex 경로에 **`--skip-git-repo-check`** 부착. 리포 밖에서 `Not inside a trusted directory ...` 로 exit 1 하던 것을 제거(리포 밖 `/tmp` 실행 실측 확인). 헤더에 실행 시간 기대치(3~10분) 주석 추가.
+
+### Fixed
+- **`deft-review` 가 엔진 검증 전에 stdin 을 읽어 무한 대기하던 결함 (deft-test 검증 중 발견)** — `PROMPT="$(cat)"` 가 `case "$ENGINE"` 보다 앞서 있어, **오타난 엔진명이나 인자 없는 호출이 검증에 닿기도 전에 stdin 대기로 고착**됐다(실측: `deft-review nosuch` 가 20분+ 무응답 — 파이프 없이 호출한 오용 경로 테스트가 조용히 멈춤). 엔진 검증 게이트를 stdin 읽기 **앞**으로 이동해 fail-fast(실측 재검증: `nosuch`/no-arg/`--help` 모두 **0초** 반환, 정상 경로 회귀 없음). 하단 `case` 의 도달 불가 브랜치는 제거. deft-test 함정 #20("stdin 이 열린 채 입력 대기 고착")과 같은 계열.
+- **`BashOutput` 은 이 하네스에서 deprecated (deft-test 검증 중 발견·정정)** — 초안은 이어받기 수단으로 `BashOutput` 을 지시하고 frontmatter `tools` 에도 추가했으나, 실제로는 **백그라운드 작업이 출력 파일 경로를 반환하고 `Read` 로 읽는 것이 정식 경로**다(실측 확인). 존재하지 않거나 폐기된 도구를 스킬에 적는 것은 deft-test §1 이 경고하는 기왕의 실수 유형 — 절차를 출력 파일 `Read` 로 교체하고 frontmatter 는 `Bash, Read` 로 원복. 페르소나에 "`BashOutput` 은 deprecated" 경고를 남겨 되돌림을 방지.
+- **gemini 도 신뢰 밖 디렉토리에서 막히던 문제 (deft-test 검증 중 발견)** — `--skip-trust` 부착. codex 의 trusted directory 와 동형 결함으로, gemini 는 `not running in a trusted directory` 승인 대기에 걸려 **무한 hang**(실측 300초 초과 background 이동)하고 그 전에 `--approval-mode plan` 이 default 로 **강등**된다. 읽기 제약은 `GEMINI_POLICY_ALLOW_READONLY` 가 유지. **이 결함은 같은 릴리즈의 stderr 보존 수정 덕에 드러났다** — 종전 `2>/dev/null` 이었다면 빈 출력만 남았다(R-18 의 stderr 조항이 즉시 값을 증명한 사례).
+- **실행 실패에 센티널이 없어 에러가 결과로 취합되던 계약 공백 (deft-test 검증 중 발견)** — 페르소나 Notes 가 "실패 시 에러 메시지를 그대로 반환"만 지시해, 새 판별 표에서 **센티널 없는 보고 = 검토 완료**로 처리되어 CLI 에러 본문이 그대로 취합될 수 있었다. 실행 실패(인증·티어·model·sandbox)는 **첫 줄 `FAILED`** 를 붙이도록 3종 페르소나에 명시하고, `SKILL.md` 판별 표에 "센티널 없는 보고는 본문이 검토 결과인지 CLI 에러인지 한 번 확인" 각주 추가. 실측 계기: gemini `IneligibleTierError`(계정 티어 — 환경 문제이나 계약 공백을 노출).
+- **Error Handling 표가 폐기를 제도화하고 있던 문제** — `Timeout (agent doesn't respond in 120s) | Synthesize with available results` 행은 분기 부재를 넘어 **"있는 것만 갖고 취합하라"고 명시**하고 있었다. Phase 4 만 고치면 이 행이 수정을 무효화하므로 `TIMEOUT_PARTIAL` = shutdown 금지 / 상한 초과 = 해당 엔진만 skip(결과 0 이면 "정규 경로 전원 실패" 명시) 2행으로 교체. (장애 보고서 미지적 — 수정 중 발견)
+- `bin/deft-review` gemini 경로의 **`2>/dev/null` 제거** — 잡음과 함께 실패 원인까지 삼켜 인증·model 오류 시 빈 출력만 남겼다. codex/claude 경로와 동일하게 stderr 를 흘리고 페르소나의 "경고 무시" 규약으로 처리. (장애 보고서는 헬퍼 전반의 stderr 유실로 지목했으나 **실제 결함은 gemini 경로 한정** — codex/claude 는 애초에 버리지 않았고, `[exited with code 1]` 만 남은 것은 Lead 우회 실행의 `2>&1` 누락이었다)
+- multi-check `agents/{codex,gemini}-reviewer.md` §폴백 명령 — `deft-review` 부재 시의 직접 실행 예시에도 동일 결함(`--skip-git-repo-check` 누락 / `2>/dev/null`)이 있어 함께 정정.
+
+### Verified (deft-test)
+- **L1 정적** — frontmatter strict YAML 전부 OK(스킬 12종 + 리뷰어 페르소나 6종), `bash -n`/`node --check` 전 bin OK, Claude↔Codex `deft-review` 바이트 동일, 버전 5곳 정합.
+- **`deft-review` 실동작** — codex 리포 안/밖, claude 리포 밖 각각 `PONG` 정상. 오용 경로(`nosuch`/no-arg/`--help`) 는 stdin 을 연 채로도 **0초 fail-fast**. 수정 전 리포 밖에서 `Not inside a trusted directory` 재현 후 수정본 정상 응답까지 대조 확인.
+- **🔴 R-18 핵심 전제 실측** — 60초 timeout 을 강제해 ① Bash 가 작업을 background 로 이동시키고 ② **프로세스가 계속 살아** 출력이 150KB→173KB 로 증가하며 ③ timeout 후 **174초를 더 실행해 완전한 분석을 산출**(exit 0)함을 확인. 사고 당시라면 이 시점의 `shutdown_request` 가 폐기했을 결과다 — 처방의 전제가 실측으로 성립.
+- **미검증(환경 제약)** — 리뷰어 Agent 가 페르소나의 센티널 절차를 실제로 준수하는지는 **orca 장수 세션의 Agent spawn 차단**(deft-test 함정 #23 계열, `Failed to create teammate pane: Timed out waiting for the Orca runtime to respond`)으로 이번 세션에서 확인하지 못했다. 메커니즘 자체는 위 실측으로 성립하며, 페르소나 준수 검증은 새 세션에서 수행할 것.
+
+## [codex-1.26.0] - 2026-09-07
+
+> **Claude 측 claude-2.51.0 의 리뷰어 실행 계층 수정 이식** — Codex 포트는 reviewer 가 **독립 pane 프로세스 + `tee` 파일**이라 폴링을 멈춰도 CLI 가 계속 돌고 출력이 완성된다. 따라서 **조기 종료 사고(R-18 연쇄 2)는 포트에서 발생하지 않는다.** 그러나 **폴링 예산 120초는 동일하게 짧았고**(`seq 1 60`×`sleep 2`), trusted directory·stderr 유실은 그대로 상속하고 있었다.
+
+### Changed
+- multi-check `SKILL.md` (4) 수집 — **폴링 예산 120s → 600s**(`seq 1 300`). "120s 로 두지 말 것" 사유 주석 동반. 예산 초과 시 **pane 을 닫지 말고 partial 취합 + 출력 파일 경로 안내**하는 절 신설(포트 고유 성질 명시).
+- multi-check `agents/*-reviewer.md` 3종 — "timeout 권장값 120초" → **600초** + 초과해도 pane 프로세스는 살아 있으므로 출력 파일을 파기하지 말고 partial 보존.
+- `bin/deft-review` — Claude 측과 동일(codex `--skip-git-repo-check` + gemini stderr 보존 + **gemini `--skip-trust`** + 헤더 주석). **양 트리 바이트 동일 유지.**
+- multi-check `SKILL.md` §Error Handling — "권장 timeout 은 reviewer 당 120초" 안내를 **600초**로 정정(폴링 예산과 어긋나 있던 stale). `timeout` 행에 **"pane 프로세스는 계속 살아 있다 — pane 을 닫지 말고 partial 보존 + 출력 파일 경로 기록"** 명시(조기 파기 방지).
+- multi-check `SKILL.md`·`agents/{codex,gemini}-reviewer.md` 의 **raw 명령 예시 전체 동기화** — `--skip-git-repo-check` 4곳 부착, gemini `2>/dev/null` 3곳 제거. 이에 따라 stale 이 된 안내문("`2>/dev/null` 을 제거해 원인을 확인한다") 2곳을 "stderr 는 억제하지 않는다"로 갱신.
+
 ## [claude-2.50.0] - 2026-08-03
 
 > **codex code_mode_only 모델(gpt-5.6 계열) 버스 장애 대응 (RATIONALE R-17)** — claudex 회의 워커가 gpt-5.6-sol(tool_mode=`code_mode_only`)로 부팅되면 버스 MCP 도구(`check_messages`/`post_message`)가 top-level 에 노출되지 않아, 노크를 받고도 실제 도구 호출 없이 "ACK: 메시지 확인했습니다" 텍스트만 출력하고 턴을 끝내는 실측 장애. code_mode_only 모델은 exec 내부 `tools.mcp__bus__*` nested 호출만 가능한데 deft 프롬프트가 direct tool 전제로 쓰여 있었고, 프로토콜이 board 첫 메시지로 전달되는 구조라 첫 check 실패 시 지침 자체를 못 읽는 부트스트랩 공백이 증폭. **NTP `send_message` 는 무관**(`multi_agent_v2.non_code_mode_only` 기본 true → DirectModelOnly — claudex 소스 확정) — 작업 모드·agent-teams(전원 claude)·multi-check(`deft-review` gpt-5.5 고정 + headless exec)는 영향 없음.

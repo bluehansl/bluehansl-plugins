@@ -28,13 +28,13 @@ fi
 기본 명령 (`$CODEX_CLI`는 `claudex` 또는 `codex`):
 
 ```bash
-"$CODEX_CLI" -a never exec --sandbox read-only -m gpt-5.5 -c 'model_reasoning_effort="xhigh"' "<prompt>"
+"$CODEX_CLI" -a never exec --sandbox read-only --skip-git-repo-check -m gpt-5.5 -c 'model_reasoning_effort="xhigh"' "<prompt>"
 ```
 
 긴 프롬프트는 stdin으로 전달한다.
 
 ```bash
-"$CODEX_CLI" -a never exec --sandbox read-only -m gpt-5.5 -c 'model_reasoning_effort="xhigh"' -
+"$CODEX_CLI" -a never exec --sandbox read-only --skip-git-repo-check -m gpt-5.5 -c 'model_reasoning_effort="xhigh"' -
 ```
 
 ## 실행 규칙
@@ -53,7 +53,7 @@ fi
    CODEX_NOT_INSTALLED: claudex 및 codex CLI가 모두 설치되어 있지 않습니다.
    ```
 
-3. 사용 가능하면 기본 명령을 실행한다. timeout 권장값은 120초다.
+3. 사용 가능하면 기본 명령을 실행한다. timeout 권장값은 600초다(gpt-5.5 xhigh 로 수 KB 검토 시 3~10분이 정상 — 120초는 항상 실패한다. 근거: R-18). 시간을 넘겨도 pane 프로세스는 살아 있으므로 출력 파일을 파기하지 말고 partial 로 보존한다.
 
 4. 내부 sandbox에서 다음 유형의 오류가 발생하면 Lead에게 권한 상승 재시도가 필요하다고 반환한다.
 

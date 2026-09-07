@@ -11,27 +11,38 @@ Google Gemini CLI 로 주어진 질문을 검토하고 결과를 반환한다. �
 
 ## 실행
 
-검토 대상 프롬프트를 `deft-review gemini` 로 실행한다 (Bash, timeout 120000):
+검토 대상 프롬프트를 `deft-review gemini` 로 실행한다 (Bash, timeout 600000):
 
 - 권장(긴/특수문자 프롬프트 안전): `printf '%s' '<검토 대상 프롬프트>' | deft-review gemini`
 - 짧은 프롬프트: `deft-review gemini "<검토 대상 프롬프트>"`
 
-헬퍼 출력을 **그대로** 사용한다(요약·수정 금지). 모델은 `gemini-3-flash-preview`, `--approval-mode plan`(읽기전용) `-o text` 로 실행되고 stderr 경고는 억제된다.
+헬퍼 출력을 **그대로** 사용한다(요약·수정 금지). 모델은 `gemini-3-flash-preview`, `--approval-mode plan`(읽기전용) `-o text` 로 실행되고 stderr 는 억제하지 않는다 — 인증·티어·model 오류의 원인이 그대로 보인다(잡음 경고는 무시하고 결과 본문만 사용). 신뢰 밖 디렉토리 차단은 `--skip-trust` 로 해소된다.
 
-**실행 규율 (필수 — 노이즈·지연 방지)**: `deft-review` 는 **foreground 로 한 번** 실행하고 그 자리에서 완료를 기다린다. **background 실행(`run_in_background`/ctrl+b)·Monitor 설정·결과파일 반복 Read(폴링) 금지** — 불필요한 반복 보고를 유발한다. 명령이 Bash timeout(120s)을 넘겨 끊기면, 우회하지 말고 **받은 부분 출력 또는 타임아웃 사실을 그대로 team-lead 에 보고**하고 종료한다.
+**실행 규율 (필수 — 노이즈·지연 방지)**: `deft-review` 는 **foreground 로 한 번** 실행하고 그 자리에서 완료를 기다린다. **선제적 background 실행(`run_in_background`/ctrl+b)·Monitor 설정·결과파일 반복 Read(폴링) 금지** — 불필요한 반복 보고를 유발한다(실측 — claudex web search 가 길어질 때 발생).
 
-> `deft-review` 가 PATH 에 없을 때만 폴백: `GEMINI_POLICY_ALLOW_READONLY=true gemini -p "<프롬프트>" -m gemini-3-flash-preview --approval-mode plan -o text 2>/dev/null` 직접 실행.
+**timeout 시 예외 절차 (필수 — 근거: R-18)**: 10분 timeout 을 넘겨 명령이 끊기면 Bash 가 그 작업을 **background 로 자동 이동**시킨다. **작업은 아직 살아 있다 — 포기·재실행 금지.**
+
+1. **즉시 중간 보고** — 본문 **첫 줄이 정확히 `TIMEOUT_PARTIAL`** 이어야 한다:
+   `SendMessage(to:"team-lead", summary:"gemini timeout - background 계속 진행", message:"TIMEOUT_PARTIAL\n출력 파일: <Bash 가 알려준 output 경로>\n<받은 부분 출력>")`
+   ⚠️ 이 센티널이 없으면 Lead 가 **결과 보고로 오인**해 `shutdown_request` 를 보내고, 그 순간 background CLI 까지 함께 죽어 거의 완성된 분석이 폐기된다(실측 사고 2026-09-07 — 리뷰어 전원 결과 0).
+2. **완료를 이어받아 대기** — Bash 가 timeout 시 **출력 파일 경로를 알려준다**(`Output is being written to: …`). 그 파일을 `Read` 로 확인하며 완료를 기다린다 — 이때만 폴링 허용: 확인 간격 **60초 이상**, 총 대기 **20분** 상한. 중간 경과는 보고하지 않는다(노이즈 방지). ⚠️ `BashOutput` 은 이 하네스에서 deprecated 다 — **출력 파일 `Read` 가 정식 경로**(실측 확인 2026-09-07).
+3. **완료 시 최종 재보고** — 본문 첫 줄을 `RESULT` 로 하고 §Teammate 보고 규약대로 전체 결과를 보낸다.
+4. **20분 상한 초과 시** — 본문 첫 줄 `FAILED` 로 사유를 보고하고 종료를 대기한다.
+
+> `deft-review` 가 PATH 에 없을 때만 폴백: `GEMINI_POLICY_ALLOW_READONLY=true gemini -p "<프롬프트>" -m gemini-3-flash-preview --approval-mode plan --skip-trust -o text` 직접 실행.
 
 ## Notes
 
 - 미설치 시 헬퍼가 `GEMINI_NOT_INSTALLED` 을 출력하고 정상 종료한다 — 그대로 보고.
 - 실패 시 에러 메시지를 그대로 반환. 결과를 요약·변형하지 않는다.
+- 🚨 **실행 실패는 본문 첫 줄에 `FAILED` 센티널을 붙여 보고한다** — 인증·티어·model·sandbox 오류처럼 CLI 가 결과 대신 에러를 낸 모든 경우. 센티널이 없으면 Lead 가 **에러 본문을 검토 결과로 오인**해 그대로 취합한다(`GEMINI_NOT_INSTALLED` 는 헬퍼가 이미 식별 문자열을 내므로 그대로 보고해도 된다). 실측 예: gemini `IneligibleTierError`, claudex sandbox `Operation not permitted`.
 
 ## Teammate 보고 규약 (필수)
 
 - 검토 결과는 **반드시 `SendMessage(to:"team-lead", summary:"gemini 검토 결과", message:"<결과 본문>")` 로 보고**한다. ⚠️ **`summary`(5~10단어) 필수** — message 가 문자열인데 summary 를 빠뜨리면 `Error: summary is required when message is a string` 로 **보고가 실패**한다(실측). 일반 출력만으로 끝내도 Lead 는 결과를 받지 못한다.
 - SendMessage 보고를 완료하기 전에는 어떤 형태의 종료도 금지.
 - **보고 완료 후 추가 요청을 기다리지 않는다** (1-shot reviewer). Lead 가 보고 직후 보내는 `shutdown_request` 에 §종료 프로토콜대로 **즉시 응답해 종료**한다 — idle 대기 불필요.
+- ⚠️ **단 `TIMEOUT_PARTIAL` 중간 보고는 예외** — 이건 최종 보고가 아니므로 그 뒤 §실행의 timeout 예외 절차대로 background 완료를 계속 이어받는다. Lead 도 이 센티널을 보면 `shutdown_request` 를 보내지 않는다. 최종 `RESULT`(또는 `FAILED`) 재보고 후에야 1-shot 이 끝난다.
 
 ## 종료 프로토콜 (필수 — pane 잔존 방지)
 

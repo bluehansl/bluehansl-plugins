@@ -39,7 +39,9 @@ Collects and multi-checks answers from Codex CLI, Claude CLI, and Gemini CLI on 
    - Question body
    - Gathered context
    - Instruction to respond in the user's language
-   - **time-box 지침 (필수 — 무한 검색·지연 방지)**: 프롬프트 말미에 "multi-check 은 **빠른 교차검증** — 신속히 진행하고, 핵심 신뢰 출처 **1~2개**로 결론을 내라. 과도한 다중 web search(수십 회)는 하지 말 것" 를 덧붙인다. claudex/codex 의 web search 가 100+ 쿼리로 수 분간 늘어지면 haiku 래퍼가 background+Monitor 폴링으로 우회해 노이즈·지연을 유발한다(실측). 심층 사실검증이 필요하면 multi-check 이 아니라 `deep-research` 스킬이 적합하다.
+   - **time-box 지침 (필수 — 무한 검색·지연 방지)**: 프롬프트 말미에 **금지형으로** 덧붙인다 — "multi-check 은 **빠른 교차검증**이다. **웹 검색 금지** — 꼭 필요하면 **1~2회 상한**. 아는 지식만으로 즉시 결론을 내고, 서론·질문 재서술 없이 본론만 쓴다."
+     - 🚨 **반드시 금지형으로 쓸 것.** 종전의 권고형("과도한 다중 web search 는 하지 말 것")은 **claudex 에 효과가 없다** — 같은 세션에서 권고형 프롬프트에 web search 11회를 수행해 10분을 넘겼고, "웹 검색 절대 금지" 로 바꾸자 즉시 준수하며 수 분 내 완료했다(실측 사고 2026-09-07, 근거: R-18).
+     - web search 가 100+ 쿼리로 늘어지면 리뷰어가 timeout 에 걸려 §Phase 4 의 `TIMEOUT_PARTIAL` 경로로 빠진다 — 결과는 나오지만 전체가 크게 느려진다. 심층 사실검증이 필요하면 multi-check 이 아니라 `deep-research` 스킬이 적합하다.
 
 ### Phase 2: CLI Availability Check
 
@@ -213,12 +215,26 @@ Bash(run_in_background: true): cmux-rebalance-watch "$LEAD_REF" "$BASE" "$EXPECT
 
 ### Phase 4: 보고 수신(per-report 종료) + Synthesis
 
-**per-report 종료 (1-shot 리뷰어 — idle 대기 제거)**: 리뷰어는 1회성이라 보고 후 추가 요청을 기다릴 필요가 없다. **각 리뷰어의 report 가 도착하는 즉시, 전원 취합을 기다리지 말고 그 리뷰어에게만 `shutdown_request` 를 보낸다.** 리뷰어는 §종료 프로토콜대로 `shutdown_response{approve:true}` 로 즉시 종료 → **pane 이 보고 직후 순차적으로 닫힌다**(동시 일괄 종료가 아니라 보고순 정리). 취합 시점엔 대부분 이미 정리 완료.
+**🚨 ① 보고 종류를 먼저 판별한다 (필수 — 근거: R-18)**: 리뷰어 보고 본문의 **첫 줄 센티널**로 완료 보고와 진행중 보고를 구분한다. **판별 없이 무조건 `shutdown_request` 를 보내면, timeout 후 background 에서 아직 돌고 있는 CLI 까지 함께 죽어 거의 완성된 분석이 폐기된다**(실측 사고 2026-09-07 — 리뷰어 2명 전원 결과 0, 정규 경로로는 아무 결과도 못 얻음).
+
+| 보고 본문 첫 줄 | 의미 | Lead 조치 |
+|---|---|---|
+| `RESULT` (또는 센티널 없는 일반 결과) | 검토 완료 | ✅ 즉시 그 리뷰어에게만 `shutdown_request` |
+
+> ⚠️ **센티널 없는 보고는 본문을 한 번 확인한다** — 구버전 리뷰어 하위호환을 위해 센티널 없는 보고를 결과로 취급하지만, 본문이 **검토 결과가 아니라 CLI 에러**(인증·티어·model·sandbox 오류 등)면 `FAILED` 로 간주해 그 엔진을 skip 한다. 에러 본문을 그대로 취합하면 사용자가 그것을 검토 의견으로 읽는다.
+| `TIMEOUT_PARTIAL` | **아직 background 에서 실행 중** | 🛑 **shutdown 보류** — 그 리뷰어를 살려둔 채 최종 `RESULT` 재보고를 기다린다 |
+| `FAILED` · `*_NOT_INSTALLED` · `*_SKIPPED` | 확정 실패 | ✅ 즉시 `shutdown_request` 후 그 엔진 skip |
+
+**② per-report 종료 (1-shot 리뷰어 — idle 대기 제거)**: 리뷰어는 1회성이라 보고 후 추가 요청을 기다릴 필요가 없다. **`RESULT`·확정 실패 보고가 도착하는 즉시, 전원 취합을 기다리지 말고 그 리뷰어에게만 `shutdown_request` 를 보낸다.** 리뷰어는 §종료 프로토콜대로 `shutdown_response{approve:true}` 로 즉시 종료 → **pane 이 보고 직후 순차적으로 닫힌다**(동시 일괄 종료가 아니라 보고순 정리). 취합 시점엔 대부분 이미 정리 완료.
 
 ```
-# 리뷰어 report 1건 수신 → 즉시 그 1명에게만 (다음 보고를 계속 대기)
+# RESULT / 확정 실패 보고 1건 수신 → 즉시 그 1명에게만 (다음 보고를 계속 대기)
 SendMessage(to: "<방금 보고한 리뷰어 이름>", message: {type: "shutdown_request"})
+
+# TIMEOUT_PARTIAL 보고 → 아무것도 보내지 않는다 (shutdown 보류 — 최종 RESULT 재보고 대기)
 ```
+
+> **TIMEOUT_PARTIAL 대기 정책**: 리뷰어 페르소나가 background 완료를 **최대 20분**까지 이어받아 `RESULT` 로 재보고한다. Lead 는 그동안 자체 분석(§Lead Analysis)과 다른 리뷰어 취합을 계속하고, **20분이 지나도 재보고가 없으면** 그 엔진을 skip 으로 처리한 뒤 Phase 5 에서 정리한다. `TIMEOUT_PARTIAL` 본문의 부분 출력이 유의미하면 "부분 결과"로 명시해 취합에 포함한다.
 
 > 🚨 **`message` 는 반드시 구조화 객체(`{type:"shutdown_request"}`) — 평문 종료 금지**: "종료해 주세요" 같은 평문 문자열은 리뷰어가 *일반 메시지*로 받아 보고만 하고 프로세스가 안 내려간다(claude 리뷰어는 kill 도 금지라 구조화 shutdown_request 가 유일 종료 수단 — 실측). 안 죽었으면 kill 이 아니라 구조화 shutdown_request 를 다시 보낸다.
 
@@ -301,7 +317,8 @@ cmux focus-pane --pane "$(cmux identify | jq -r .caller.pane_ref)" 2>/dev/null
 |----------|--------|
 | CLI not installed | Skip that model, proceed with remaining |
 | API error (ModelNotFoundError, etc.) | Skip that model, note in results |
-| Timeout (agent doesn't respond in 120s) | Synthesize with available results |
+| 리뷰어가 `TIMEOUT_PARTIAL` 보고 | 🛑 **shutdown 금지** — background CLI 가 살아 있다. 최종 `RESULT` 재보고를 기다린다(리뷰어 상한 20분). 여기서 shutdown 을 보내면 거의 완성된 분석이 폐기된다 (근거: R-18) |
+| 리뷰어가 10분 + 20분을 모두 넘겨 무응답 | 그 엔진만 skip 하고 남은 결과로 취합. 결과가 0건이면 §Lead Analysis 단독으로 진행하되 **"정규 경로 전원 실패"를 사용자에게 명시** |
 | All CLIs fail | Compare Lead analysis against error context |
 | 리뷰어가 spawn 직후 무응답 | `model` 미지정 시 기본 `fable` 로 떠 의도한 경량 `haiku` 래퍼가 아님 — `model:"haiku"` 명시를 확인. 그래도 무응답이면 해당 모델 skip 후 진행 |
 | Reviewer dies right after spawn (e.g. binary path error) | Close its dead pane (`cmux top --processes` 로 프로세스 0 확인 후 `cmux close-surface`) → respawn → **rebalancing 재호출** — 죽은 pane 을 방치하면 레이아웃·식별 혼란. 🟠 orca 모드: `orca terminal list`→`orca terminal close` 로 정리(확신 없으면 UI 수동), respawn 만 수행(rebalancing 없음) |

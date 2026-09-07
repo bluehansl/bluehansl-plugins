@@ -133,6 +133,32 @@
 
 ---
 
+---
+
+## 리뷰어 실행 (multi-check)
+
+### R-18. timeout 은 실패가 아니라 "진행 중" — 결과 보고와 구분 못 하면 완성된 분석이 폐기된다 (실측 사고 2026-09-07)
+
+- **사고**: multi-check 정규 경로(Agent 리뷰어)로 **양쪽 엔진 모두 결과 0**. Lead 가 CLI 를 직접 실행하는 우회로만 목적을 달성했다. 장애 기록 원본: `skills/multi-check/INCIDENT-2026-09-07-reviewer-timeout.md`.
+- **연쇄 (4중 결함이 겹침)**:
+  1. **timeout 예산 불일치** — 페르소나가 `Bash, timeout 120000`(2분)을 지시했으나 `gpt-5.5`+xhigh 로 수 KB 프롬프트를 검토하면 **3~6분**, web search 가 붙으면 **10분+**. 즉 **짧은 질문에서만 동작하고 스킬의 본래 용도(설계·코드 교차검증)에서는 구조적으로 항상 실패**했다. 게다가 페르소나가 `run_in_background` 를 금지해 리뷰어에게 우회 수단이 없었다.
+  2. **실패 보고를 결과 보고로 오인** — Phase 4 는 "report 1건 수신 → 즉시 `shutdown_request`" 였고 **보고 종류를 구분할 분기가 없었다.** timeout 보고는 결과가 아니라 실패인데 Lead 가 종료를 보냈고, 리뷰어가 죽으면서 **background 로 밀려 아직 돌던 CLI 까지 함께 사라졌다**(출력 파일 말미가 `[killed]`). 8,416바이트가 남았지만 대부분 프롬프트 에코 + web search 로그였고 분석 본문은 시작 전이었다.
+  3. **Error Handling 이 폐기를 제도화** — 표에 `Timeout (agent doesn't respond in 120s) | Synthesize with available results` 가 있어, 분기가 없는 정도가 아니라 **"있는 것만 갖고 취합하라"고 명시**돼 있었다. Phase 4 만 고치고 이 행을 두면 수정이 무효화된다.
+  4. **git 리포 밖 실행 불가** — `deft-review codex` 가 `--skip-git-repo-check` 없이 `codex exec` 를 불러 리포 밖에서 `Not inside a trusted directory and --skip-git-repo-check was not specified` 로 **exit 1**. 스킬·페르소나 어디에도 "리포 안에서 실행" 전제가 없었고, Lead 우회 실행의 cwd 가 `~` 라 즉시 실패했다.
+- **소스 확정**: `claudex exec --help` → `--skip-git-repo-check  Allow running Codex outside a Git repository`. 수정 후 `/tmp` 에서 `deft-review codex` 정상 응답 실측.
+- **처방 (구조)**: **timeout 의 의미를 재정의**한다 — Bash 는 timeout 시 작업을 죽이지 않고 background 로 옮기므로 **작업은 살아 있다**. 따라서 timeout 은 "실패"가 아니라 "아직 진행 중"이다.
+  - 리뷰어: 예산을 **600000(10분)** 으로 올리고, 그래도 넘치면 ① 첫 줄 `TIMEOUT_PARTIAL` 센티널로 **중간 보고** ② `BashOutput` 으로 완료를 이어받아 대기(간격 60초+, 상한 20분) ③ 완료 시 첫 줄 `RESULT` 로 **재보고**.
+  - Lead: 보고 **첫 줄 센티널로 종류를 판별** — `RESULT`/확정 실패면 즉시 shutdown, `TIMEOUT_PARTIAL` 이면 **shutdown 보류**.
+  - ⚠️ 예산 숫자만 올리는 처방은 **불충분**하다 — 10분을 넘기는 검토에서 동일 사고가 그대로 재발한다. 센티널 분기가 본질이다.
+- **센티널을 쓰는 이유**: deft 취합자는 코드가 아니라 **LLM Lead** 라 JSON verdict 계약을 채택하지 않았다(claude-2.49.0 결정). 같은 사상으로 **첫 줄 센티널 + 자유 텍스트** 가 최소 계약이다 — Lead 가 기계적으로 분기할 수 있으면서 본문은 그대로 읽힌다.
+- **time-box 는 금지형으로**: 권고형("과도한 다중 web search 는 하지 말 것")은 **claudex 에 효과가 없다** — 같은 세션에서 권고형에 web search **11회**를 수행했고, "웹 검색 절대 금지"로 바꾸자 즉시 준수하며 수 분 내 완료했다.
+- **stderr 를 삼키지 말 것**: `deft-review` gemini 경로의 `2>/dev/null` 은 잡음과 함께 **실패 원인까지** 버려 빈 출력만 남긴다. codex/claude 경로처럼 흘려보내고 "경고는 무시" 규약으로 처리한다.
+- **동형 결함은 엔진마다 확인할 것 (deft-test 검증 중 발견)**: trusted directory 제약은 codex 만의 것이 아니다 — **gemini 도** `not running in a trusted directory` 로 막히며, 승인 대기에 걸려 **무한 hang** 하고 `--approval-mode plan` 이 default 로 강등된다(`--skip-trust` 로 해소). 한 엔진에서 실행 계층 결함을 고치면 나머지 엔진에서 동형을 반드시 확인한다.
+- **센티널은 실패 경로까지 덮어야 한다 (deft-test 검증 중 발견)**: "센티널 없음 = 결과"로 두면 **CLI 에러 본문이 검토 의견으로 취합**된다. 실행 실패(인증·티어·model·sandbox)는 첫 줄 `FAILED` 를 강제하고, Lead 는 센티널 없는 보고의 본문이 결과인지 에러인지 한 번 확인한다.
+- **Codex 포트 차이**: 포트는 reviewer 가 **독립 pane 프로세스 + `tee` 파일**이라 폴링 예산이 끝나도 CLI 가 계속 돌고 출력 파일이 완성된다 — **조기 종료 사고는 포트에서 발생하지 않는다.** 다만 예산 120s 는 동일하게 짧아 600s 로 올렸다(미완료는 partial 보존, pane 을 닫지 않는다).
+- **정상 동작했던 것 (오해 방지)**: orca 판정·가드 skip·페르소나 인라인·graceful 종료·`SendMessage` 보고 규약은 **전부 설계대로**였다. 실패는 **CLI 실행 계층**(timeout·trusted directory·검색 폭주)에서만 났다 — orca pane 조작을 의심하지 말 것.
+- **지침**: multi-check `SKILL.md` §Phase 1 time-box·§Phase 4 ①보고 종류 판별·§Error Handling, `agents/*-reviewer.md` §실행(timeout 예외 절차), `bin/deft-review`.
+
 ## 출력 / UX (전 스킬 공통)
 
 ### R-14. Lead 출력 레지스터 — 의미 이벤트만
